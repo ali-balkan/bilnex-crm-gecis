@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bilnex CRM Geçiş Planı</title>
+  <style>
+    body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#eef3f9;color:#002552;line-height:1.5}header{background:#082b55;color:#fff;padding:28px 40px;border-bottom:4px solid #ff6b35}main{width:min(1180px,calc(100% - 32px));margin:24px auto 48px}.summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.stat,section{background:#fff;border:1px solid #cdd9e7;border-radius:8px;box-shadow:0 10px 30px rgba(0,37,82,.06)}.stat{padding:16px}.stat span{display:block;color:#546274;font-size:13px}.stat strong{display:block;margin-top:8px;font-size:24px}section{margin-top:16px;padding:20px}.tag{display:inline-flex;padding:4px 10px;border-radius:999px;background:#e7f3ff;color:#0a76bd;font-weight:700;font-size:12px}.checklist{list-style:none;padding:0;display:grid;gap:10px}.checklist li{display:grid;grid-template-columns:26px 1fr auto auto;gap:10px;padding:12px;border:1px solid #cdd9e7;border-radius:8px;background:#fbfdff}.checklist li.done{background:#f3fbf7;border-color:#bce6d0}input[type=checkbox]{width:18px;height:18px;cursor:not-allowed;filter:grayscale(1);opacity:.65}.phase,.date{color:#546274;font-size:12px;font-weight:700;white-space:nowrap}.timeline{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.day{border:1px solid #cdd9e7;border-radius:8px;padding:14px;background:#fbfdff}.mapping{width:100%;border-collapse:collapse;min-width:720px}.table-wrap{overflow-x:auto}th,td{text-align:left;padding:11px 10px;border-bottom:1px solid #cdd9e7;vertical-align:top}footer{width:min(1180px,calc(100% - 32px));margin:0 auto 30px;color:#546274;font-size:13px}@media(max-width:900px){.summary,.timeline{grid-template-columns:1fr}.checklist li{grid-template-columns:26px 1fr}.phase,.date{grid-column:2}}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Bilnex CRM Geçiş Planı</h1>
+    <p>SQLite tabanlı mevcut CRM'in monorepo yapıya alınması ve SQL Server üzerindeki Bilnex CRM tablolarıyla kontrollü şekilde çalışması için takip ekranı.</p>
+  </header>
+  <main>
+    <div class="summary">
+      <div class="stat"><span>Durum</span><strong>Başladı</strong></div>
+      <div class="stat"><span>Hedef bitiş</span><strong>09.05.2026</strong></div>
+      <div class="stat"><span>Ana Cari Tablosu</span><strong>dbo.Customer</strong></div>
+      <div class="stat"><span>Son güncelleme</span><strong>07.05.2026</strong></div>
+    </div>
+    <section>
+      <h2>3 Günlük Takvim <span class="tag">07-09 Mayıs 2026</span></h2>
+      <div class="timeline">
+        <div class="day"><strong>1. Gün - 07.05.2026</strong><br>Yedek, GitHub hazırlığı, monorepo iskeleti ve mevcut CRM'in davranış değişmeden taşınması.</div>
+        <div class="day"><strong>2. Gün - 08.05.2026</strong><br>SQL Server bağlantı katmanı, Customer/Address okuma entegrasyonu ve ekran testleri.</div>
+        <div class="day"><strong>3. Gün - 09.05.2026</strong><br>Kontrollü yazma testleri, fırsat/görev ilişkileri, mobil test ve canlı geçiş hazırlığı.</div>
+      </div>
+    </section>
+    <section>
+      <h2>Geçiş Kontrol Listesi <span class="tag">Yalnız Codex günceller</span></h2>
+      <ul class="checklist">
+        <li class="done"><input type="checkbox" checked disabled><span>Geçiş takip sayfası oluşturuldu.</span><span class="phase">Hazırlık</span><span class="date">07.05</span></li>
+        <li class="done"><input type="checkbox" checked disabled><span>SQL Server instance doğrulandı: localhost\BILNEXSQLCRM.</span><span class="phase">Keşif</span><span class="date">07.05</span></li>
+        <li class="done"><input type="checkbox" checked disabled><span>Hedef database doğrulandı: BILNEXCRMDB.</span><span class="phase">Keşif</span><span class="date">07.05</span></li>
+        <li class="done"><input type="checkbox" checked disabled><span>dbo.Customer, dbo.Address ve dbo.CustomerType tabloları incelendi.</span><span class="phase">Keşif</span><span class="date">07.05</span></li>
+        <li class="done"><input type="checkbox" checked disabled><span>Mevcut CRM dosyaları ve SQLite veritabanı yedeklendi.</span><span class="phase">Hazırlık</span><span class="date">07.05</span></li>
+        <li class="done"><input type="checkbox" checked disabled><span>Canlı FTP alanındaki mevcut CRM dosyaları ve veritabanı yedeklendi.</span><span class="phase">Hazırlık</span><span class="date">07.05</span></li>
+        <li class="done"><input type="checkbox" checked disabled><span>GitHub ortak repo hazırlandı ve ilk dosyalar eklendi.</span><span class="phase">GitHub</span><span class="date">07.05</span></li>
+        <li><input type="checkbox" disabled><span>CustomerTypeId kararları netleştirildi.</span><span class="phase">Karar</span><span class="date">07.05</span></li>
+        <li><input type="checkbox" disabled><span>Monorepo klasör yapısı kuruldu.</span><span class="phase">Kod</span><span class="date">07.05</span></li>
+        <li><input type="checkbox" disabled><span>SQL Server bağlantı katmanı sadece okuma modunda eklendi.</span><span class="phase">Kod</span><span class="date">08.05</span></li>
+      </ul>
+    </section>
+    <section>
+      <h2>Veri Eşleştirme</h2>
+      <div class="table-wrap"><table class="mapping"><thead><tr><th>CRM Alanı</th><th>SQL Server Alanı</th><th>Not</th></tr></thead><tbody><tr><td>Firma adı</td><td>dbo.Customer.Name1</td><td>Ana cari adı.</td></tr><tr><td>Cari türü</td><td>dbo.Customer.CustomerTypeId</td><td>İş ortağı ve son kullanıcı ayrımı.</td></tr><tr><td>Telefon</td><td>dbo.Address.Phone</td><td>CustomerId ile bağlı.</td></tr><tr><td>E-posta</td><td>dbo.Address.EMail</td><td>CustomerId ile bağlı.</td></tr></tbody></table></div>
+    </section>
+  </main>
+  <footer>Bu alan mevcut CRM'den bağımsız geçiş takip ekranıdır.</footer>
+</body>
+</html>
