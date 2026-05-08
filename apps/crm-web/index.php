@@ -754,28 +754,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ':next_followup_date' => $nextFollowupDate,
         ];
         db()->prepare('INSERT INTO interactions (company_id, sql_customer_id, user_id, interaction_date, type, result, note, next_followup_date) VALUES (:company_id, :sql_customer_id, :user_id, :interaction_date, :type, :result, :note, :next_followup_date)')->execute($data);
-        db()->prepare("UPDATE companies SET next_followup_date = COALESCE(:next_followup_date, next_followup_date), status = CASE WHEN status = 'Yeni kayıt' THEN 'Görüşüldü' ELSE status END, updated_at = CURRENT_TIMESTAMP WHERE id = :company_id")->execute([
-            ':next_followup_date' => $data[':next_followup_date'],
-            ':company_id' => $companyId,
-        ]);
-        $statusByResult = [
-            'Olumlu' => 'GÃ¶rÃ¼ÅŸÃ¼ldÃ¼',
-            'Olumsuz' => 'Olumsuz',
-            'Teklif istiyor' => 'Teklif bekliyor',
-            'UlaÅŸÄ±lamadÄ±' => 'UlaÅŸÄ±lamadÄ±',
-        ];
-        $companyStatus = $statusByResult[$result] ?? null;
-        $closesFollowup = $nextFollowupDate === null && in_array($result, ['Olumlu', 'Olumsuz'], true);
-        if ($closesFollowup) {
-            db()->prepare('UPDATE companies SET next_followup_date = NULL, status = COALESCE(:status, status), updated_at = CURRENT_TIMESTAMP WHERE id = :company_id')->execute([
-                ':status' => $result === 'Olumlu' ? null : $companyStatus,
+        if (company_source() !== 'sqlserver') {
+            db()->prepare("UPDATE companies SET next_followup_date = COALESCE(:next_followup_date, next_followup_date), status = CASE WHEN status = 'Yeni kayıt' THEN 'Görüşüldü' ELSE status END, updated_at = CURRENT_TIMESTAMP WHERE id = :company_id")->execute([
+                ':next_followup_date' => $data[':next_followup_date'],
                 ':company_id' => $companyId,
             ]);
-        } elseif ($companyStatus !== null && $result !== 'Olumlu') {
-            db()->prepare('UPDATE companies SET status = :status, updated_at = CURRENT_TIMESTAMP WHERE id = :company_id')->execute([
-                ':status' => $companyStatus,
-                ':company_id' => $companyId,
-            ]);
+            $statusByResult = [
+                'Olumlu' => 'GÃ¶rÃ¼ÅŸÃ¼ldÃ¼',
+                'Olumsuz' => 'Olumsuz',
+                'Teklif istiyor' => 'Teklif bekliyor',
+                'UlaÅŸÄ±lamadÄ±' => 'UlaÅŸÄ±lamadÄ±',
+            ];
+            $companyStatus = $statusByResult[$result] ?? null;
+            $closesFollowup = $nextFollowupDate === null && in_array($result, ['Olumlu', 'Olumsuz'], true);
+            if ($closesFollowup) {
+                db()->prepare('UPDATE companies SET next_followup_date = NULL, status = COALESCE(:status, status), updated_at = CURRENT_TIMESTAMP WHERE id = :company_id')->execute([
+                    ':status' => $result === 'Olumlu' ? null : $companyStatus,
+                    ':company_id' => $companyId,
+                ]);
+            } elseif ($companyStatus !== null && $result !== 'Olumlu') {
+                db()->prepare('UPDATE companies SET status = :status, updated_at = CURRENT_TIMESTAMP WHERE id = :company_id')->execute([
+                    ':status' => $companyStatus,
+                    ':company_id' => $companyId,
+                ]);
+            }
         }
         flash('Görüşme notu eklendi.');
         redirect_to('company_view', ['id' => $companyId]);
@@ -800,7 +802,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             require_company_access((int) $existing['company_id']);
         }
         if ($companyId <= 0) {
-            flash('İlgili bayi / firma seçimi zorunludur.', 'danger');
+            flash('İlgili cari seçimi zorunludur.', 'danger');
             redirect_to('opportunity_form', $id > 0 ? ['id' => $id] : []);
         }
         require_company_access($companyId);
@@ -908,7 +910,7 @@ if ($page === 'dashboard') {
         render_bar_list($staff, 'full_name', 'total');
         echo '</article>';
 
-        echo '<article class="panel chart-panel"><div class="section-title"><h2>Bayi durum dağılımı</h2><a class="btn small" href="' . e(app_url('companies')) . '">Liste</a></div>';
+        echo '<article class="panel chart-panel"><div class="section-title"><h2>Cari türü dağılımı</h2><a class="btn small" href="' . e(app_url('companies')) . '">Liste</a></div>';
         render_bar_list($statusRows, 'status', 'total');
         echo '</article>';
 
@@ -932,7 +934,7 @@ if ($page === 'dashboard') {
         echo '</section>';
 
         echo '<section class="grid-two">';
-        echo '<article class="panel"><div class="section-title"><h2>Geciken takipler</h2><a class="btn small" href="' . e(app_url('followups', ['date_filter' => 'custom', 'date_to' => $today])) . '">Takipleri aç</a></div><div class="table-wrap"><table><thead><tr><th>Firma</th><th>Sorumlu</th><th>Takip tarihi</th></tr></thead><tbody>';
+        echo '<article class="panel"><div class="section-title"><h2>Geciken takipler</h2><a class="btn small" href="' . e(app_url('followups', ['date_filter' => 'custom', 'date_to' => $today])) . '">Takipleri aç</a></div><div class="table-wrap"><table><thead><tr><th>Cari</th><th>Sorumlu</th><th>Takip tarihi</th></tr></thead><tbody>';
         foreach ($overdueRows as $row) {
             echo '<tr class="overdue"><td><a href="' . e(app_url('company_view', ['id' => $row['id']])) . '">' . e($row['name']) . '</a></td><td>' . e($row['responsible_name']) . '</td><td>' . e($row['next_followup_date']) . '</td></tr>';
         }
@@ -941,7 +943,7 @@ if ($page === 'dashboard') {
         }
         echo '</tbody></table></div></article>';
 
-        echo '<article class="panel"><div class="section-title"><h2>En yüksek açık fırsatlar</h2><a class="btn small" href="' . e(app_url('opportunities')) . '">Tümünü gör</a></div><div class="table-wrap"><table><thead><tr><th>Firma</th><th>Fırsat</th><th>Aşama</th><th>Tutar</th></tr></thead><tbody>';
+        echo '<article class="panel"><div class="section-title"><h2>En yüksek açık fırsatlar</h2><a class="btn small" href="' . e(app_url('opportunities')) . '">Tümünü gör</a></div><div class="table-wrap"><table><thead><tr><th>Cari</th><th>Fırsat</th><th>Aşama</th><th>Tutar</th></tr></thead><tbody>';
         foreach ($openOpps as $row) {
             echo '<tr><td>' . e($row['company_name']) . '<small>' . e($row['salesperson_name']) . '</small></td><td>' . e($row['product_service']) . '</td><td>' . e($row['stage']) . '</td><td>' . e(money($row['estimated_amount'])) . '</td></tr>';
         }
@@ -1027,7 +1029,7 @@ if ($page === 'dashboard') {
         echo '</article>';
         echo '</section>';
         $recent = rows('SELECT id, name, status, next_followup_date FROM companies WHERE responsible_user_id = :uid OR created_by = :uid ORDER BY created_at DESC LIMIT 8', [':uid' => $uid]);
-        echo '<section class="panel"><h2>Son eklediğim bayiler</h2><div class="table-wrap"><table><thead><tr><th>Firma</th><th>Durum</th><th>Takip</th></tr></thead><tbody>';
+        echo '<section class="panel"><h2>Son eklediğim cariler</h2><div class="table-wrap"><table><thead><tr><th>Cari</th><th>Durum</th><th>Takip</th></tr></thead><tbody>';
         foreach ($recent as $row) {
             echo '<tr><td><a href="' . e(app_url('company_view', ['id' => $row['id']])) . '">' . e($row['name']) . '</a></td><td>' . e($row['status']) . '</td><td>' . e($row['next_followup_date']) . '</td></tr>';
         }
@@ -1105,6 +1107,7 @@ if ($page === 'users') {
 
 if ($page === 'companies') {
     render_header('Cariler');
+    $usingSqlServerCompanies = company_source() === 'sqlserver';
     $where = ' WHERE 1 = 1';
     $params = [];
     [$scopeSql, $scopeParams] = owned_company_condition('c');
@@ -1114,7 +1117,7 @@ if ($page === 'companies') {
         $where .= ' AND (c.name LIKE :q OR c.account_code LIKE :q OR c.tax_no LIKE :q OR c.contact_person LIKE :q OR c.phone LIKE :q OR c.email LIKE :q OR c.city LIKE :q)';
         $params[':q'] = '%' . $_GET['q'] . '%';
     }
-    if (!empty($_GET['status'])) {
+    if (!$usingSqlServerCompanies && !empty($_GET['status'])) {
         $where .= ' AND c.status = :status';
         $params[':status'] = $_GET['status'];
     }
@@ -1134,13 +1137,14 @@ if ($page === 'companies') {
     }
     $extras = [
         'account_type' => ['_label' => 'Cari türü', 'items' => array_combine(company_account_types(), company_account_types())],
-        'status' => ['_label' => 'Durum', 'items' => array_combine(company_statuses(), company_statuses())],
     ];
+    if (!$usingSqlServerCompanies) {
+        $extras['status'] = ['_label' => 'Durum', 'items' => array_combine(company_statuses(), company_statuses())];
+    }
     if (can_view_all()) {
         $extras['responsible_user_id'] = ['_label' => 'Sorumlu', 'items' => $userOptions];
     }
     filter_bar('companies', $extras);
-    $usingSqlServerCompanies = company_source() === 'sqlserver';
     $sqlCustomerReader = $usingSqlServerCompanies ? bilnex_customer_reader() : null;
     $sqlCustomerTypeId = $usingSqlServerCompanies && !empty($_GET['account_type'])
         ? company_account_type_sql_id($_GET['account_type'])
@@ -1173,7 +1177,7 @@ if ($page === 'companies') {
         <?= csrf_field() ?>
         <div>
             <h2>Excelden cari yükle</h2>
-            <p class="muted">Başlıklar: Cari, Yetkili, Telefon, E-posta, İl, İlçe, Adres, Durum, Kaynak, Sorumlu, Sonraki takip, Açıklama. CSV veya XLSX yükleyebilirsiniz.</p>
+            <p class="muted">Başlıklar: <?= $usingSqlServerCompanies ? 'Cari, Yetkili, Telefon, E-posta, İl, İlçe, Adres, Kaynak, Sorumlu, Sonraki takip, Açıklama' : 'Cari, Yetkili, Telefon, E-posta, İl, İlçe, Adres, Durum, Kaynak, Sorumlu, Sonraki takip, Açıklama' ?>. CSV veya XLSX yükleyebilirsiniz.</p>
         </div>
         <?php if (can_view_all()): ?>
             <label>Varsayılan sorumlu
@@ -1197,7 +1201,7 @@ if ($page === 'companies') {
             </div>
         </div>
         <div class="table-wrap"><table class="companies-table">
-            <thead><tr><th>Cari kodu</th><th>Cari</th><th>Cari türü</th><th>Yetkili</th><th>Telefon</th><th>İl</th><th>Durum</th><th>Sorumlu</th><th>Sonraki takip</th><th>Aksiyon</th></tr></thead>
+            <thead><tr><th>Cari kodu</th><th>Cari</th><th>Cari türü</th><th>Yetkili</th><th>Telefon</th><th>İl</th><?php if (!$usingSqlServerCompanies): ?><th>Durum</th><?php endif; ?><th>Sorumlu</th><th>Sonraki takip</th><th>Aksiyon</th></tr></thead>
             <tbody>
             <?php foreach ($companies as $row): ?>
                 <tr>
@@ -1213,7 +1217,7 @@ if ($page === 'companies') {
                     <td><?= e($row['contact_person']) ?></td>
                     <td><?php if ($row['phone']): ?><a href="tel:<?= e($row['phone']) ?>"><?= e($row['phone']) ?></a><?php endif; ?></td>
                     <td><?= e($row['city']) ?></td>
-                    <td><span class="badge"><?= e($row['status']) ?></span></td>
+                    <?php if (!$usingSqlServerCompanies): ?><td><span class="badge"><?= e($row['status']) ?></span></td><?php endif; ?>
                     <td><?= e($row['responsible_name']) ?></td>
                     <td><?= e($row['next_followup_date']) ?></td>
                     <td>
@@ -1236,6 +1240,7 @@ if ($page === 'companies') {
 if ($page === 'company_form') {
     $id = (int) ($_GET['id'] ?? 0);
     $company = null;
+    $usesSqlCustomerWrite = company_source() === 'sqlserver';
     if ($id > 0) {
         require_company_access($id);
         $company = rows('SELECT * FROM companies WHERE id = :id', [':id' => $id])[0] ?? null;
@@ -1264,13 +1269,15 @@ if ($page === 'company_form') {
         <label class="wide">Adres <textarea name="address"><?= e($company['address'] ?? '') ?></textarea></label>
         <label>Bakiye <input name="balance_amount" inputmode="decimal" value="<?= e($company['balance_amount'] ?? '') ?>"></label>
         <label>B/A <input name="balance_side" value="<?= e($company['balance_side'] ?? '') ?>"></label>
-        <label>Durum
-            <select name="status">
-                <?php foreach (company_statuses() as $status): ?>
-                    <option value="<?= e($status) ?>"<?= selected($company['status'] ?? 'Yeni kayıt', $status) ?>><?= e($status) ?></option>
-                <?php endforeach; ?>
-            </select>
-        </label>
+        <?php if (!$usesSqlCustomerWrite): ?>
+            <label>Durum
+                <select name="status">
+                    <?php foreach (company_statuses() as $status): ?>
+                        <option value="<?= e($status) ?>"<?= selected($company['status'] ?? 'Yeni kayıt', $status) ?>><?= e($status) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+        <?php endif; ?>
         <label>Kaynak <input name="source" value="<?= e($company['source'] ?? '') ?>"></label>
         <label>Sorumlu personel
             <select name="responsible_user_id"<?= can_view_all() ? '' : ' disabled' ?>>
@@ -1297,15 +1304,16 @@ if ($page === 'company_view') {
     $company = rows('SELECT c.*, u.full_name responsible_name FROM companies c LEFT JOIN users u ON u.id = c.responsible_user_id WHERE c.id = :id', [':id' => $id])[0] ?? null;
     if (!$company) {
         http_response_code(404);
-        exit('Firma bulunamadı.');
+        exit('Cari bulunamadı.');
     }
+    $usesSqlCustomerWrite = company_source() === 'sqlserver';
     render_header($company['name']);
     $interactions = rows('SELECT i.*, u.full_name user_name FROM interactions i LEFT JOIN users u ON u.id = i.user_id WHERE i.company_id = :id ORDER BY i.interaction_date DESC, i.created_at DESC', [':id' => $id]);
     $opps = rows('SELECT o.*, u.full_name salesperson_name FROM opportunities o LEFT JOIN users u ON u.id = o.salesperson_id WHERE o.company_id = :id ORDER BY o.updated_at DESC', [':id' => $id]);
     ?>
     <section class="detail-head">
         <div>
-            <span class="badge"><?= e($company['status']) ?></span>
+            <?php if (!$usesSqlCustomerWrite): ?><span class="badge"><?= e($company['status']) ?></span><?php endif; ?>
             <span class="badge soft"><?= e($company['account_type'] ?? 'İş Ortağı') ?></span>
             <p><?= e($company['contact_person']) ?> · <?= e($company['phone']) ?> · <?= e($company['email']) ?></p>
             <p><?= e(trim($company['city'] . ' ' . $company['district'])) ?> <?= e($company['address']) ?></p>
@@ -1388,7 +1396,7 @@ if ($page === 'task_form') {
             </select>
         </label>
         <label>Termin tarihi <input type="date" name="due_date"></label>
-        <label>İlgili bayi / firma
+        <label>İlgili cari
             <select name="company_id">
                 <option value="">Bağlantı yok</option>
                 <?php foreach ($taskCompanies as $company): ?>
@@ -1633,7 +1641,7 @@ if ($page === 'followups_legacy') {
     ?>
     <section class="panel">
         <div class="table-wrap"><table>
-            <thead><tr><th>Takip tarihi</th><th>Firma</th><th>Cari türü</th><th>Yetkili</th><th>Telefon</th><th>Durum</th><th>Sorumlu</th><th>Aksiyon</th></tr></thead>
+            <thead><tr><th>Takip tarihi</th><th>Cari</th><th>Cari türü</th><th>Yetkili</th><th>Telefon</th><th>Durum</th><th>Sorumlu</th><th>Aksiyon</th></tr></thead>
             <tbody>
             <?php foreach ($items as $row): ?>
                 <tr class="<?= strtotime($row['next_followup_date']) < strtotime(date('Y-m-d')) ? 'overdue' : '' ?>">
@@ -1689,7 +1697,7 @@ if ($page === 'opportunities') {
     ?>
     <section class="panel">
         <div class="table-wrap"><table class="opportunities-table">
-            <thead><tr><th>Firma</th><th>Cari türü</th><th>SQL Customer</th><th>Satışçı</th><th>Ürün / hizmet</th><th>Tutar</th><th>Aşama</th><th>Kapanış</th><th></th></tr></thead>
+            <thead><tr><th>Cari</th><th>Cari türü</th><th>SQL Customer</th><th>Satışçı</th><th>Ürün / hizmet</th><th>Tutar</th><th>Aşama</th><th>Kapanış</th><th></th></tr></thead>
             <tbody>
             <?php foreach ($items as $row): ?>
                 <tr>
@@ -1746,7 +1754,7 @@ if ($page === 'opportunity_form') {
     <form class="panel form-grid" method="post" action="<?= e(app_url('save_opportunity')) ?>">
         <?= csrf_field() ?>
         <input type="hidden" name="id" value="<?= e($opp['id'] ?? 0) ?>">
-        <label>İlgili bayi / firma
+        <label>İlgili cari
             <input name="company_lookup" list="company_options" value="<?= e($selectedCompany ? company_lookup_label($selectedCompany) : '') ?>" placeholder="Cari kodu veya firma adı yazın..." required autocomplete="off">
             <datalist id="company_options">
                 <?php foreach ($companies as $company): ?>
@@ -1871,7 +1879,7 @@ if ($page === 'reports') {
     <section class="stats-grid">
         <?php
             dashboard_card('Toplam görüşme', $totalInteractions, 'Seçili dönem', '');
-            dashboard_card('Bayi / firma', $totalCompanies, can_view_all() ? 'Tüm erişilebilir kayıtlar' : 'Sorumlu olduğum kayıtlar', '');
+            dashboard_card('Cari', $totalCompanies, can_view_all() ? 'Tüm erişilebilir kayıtlar' : 'Sorumlu olduğum kayıtlar', '');
             dashboard_card('Geciken takip', $totalOverdue, 'Öncelikli aksiyon', $totalOverdue > 0 ? 'danger-stat' : 'success-stat');
             dashboard_card('Açık fırsat', $openOppCount, 'Devam eden satışlar', '');
             dashboard_card('Kazanılan satış', money($wonAmount), 'Kapanış oranı: ' . $winRate, 'success-stat');
@@ -1888,7 +1896,7 @@ if ($page === 'reports') {
             <?php render_bar_list($resultReport, 'result', 'total'); ?>
         </article>
         <article class="panel chart-panel">
-            <h2>Bayi durum raporu</h2>
+            <h2>Cari takip raporu</h2>
             <?php render_bar_list($statusReport, 'status', 'total'); ?>
         </article>
         <article class="panel chart-panel">
@@ -1907,14 +1915,14 @@ if ($page === 'reports') {
     <section class="grid-two">
         <article class="panel">
             <div class="section-title"><h2>Geciken takip aksiyonları</h2><a class="btn small" href="<?= e(app_url('followups', ['date_filter' => 'custom', 'date_to' => $today])) ?>">Takip listesi</a></div>
-            <div class="table-wrap"><table><thead><tr><th>Firma</th><th>Cari türü</th><th>Takip</th><th>Sorumlu</th></tr></thead><tbody>
+            <div class="table-wrap"><table><thead><tr><th>Cari</th><th>Cari türü</th><th>Takip</th><th>Sorumlu</th></tr></thead><tbody>
                 <?php foreach ($overdue as $r): ?><tr class="overdue"><td><a href="<?= e(app_url('company_view', ['id' => $r['id']])) ?>"><?= e($r['name']) ?></a></td><td><?= e($r['account_type'] ?? 'İş Ortağı') ?></td><td><?= e($r['next_followup_date']) ?></td><td><?= e($r['responsible_name']) ?></td></tr><?php endforeach; ?>
                 <?php if (!$overdue): ?><tr><td colspan="4" class="muted">Geciken takip yok.</td></tr><?php endif; ?>
             </tbody></table></div>
         </article>
         <article class="panel">
             <h2>Günlük görüşme listesi</h2>
-            <div class="table-wrap"><table><thead><tr><th>Tarih</th><th>Firma</th><th>Cari türü</th><th>Personel</th><th>Tür</th><th>Sonuç</th><th>Not</th></tr></thead><tbody>
+            <div class="table-wrap"><table><thead><tr><th>Tarih</th><th>Cari</th><th>Cari türü</th><th>Personel</th><th>Tür</th><th>Sonuç</th><th>Not</th></tr></thead><tbody>
                 <?php foreach ($daily as $r): ?><tr><td><?= e($r['interaction_date']) ?></td><td><?= e($r['company_name']) ?></td><td><?= e($r['company_account_type'] ?? 'İş Ortağı') ?></td><td><?= e($r['user_name']) ?></td><td><?= e($r['type']) ?></td><td><?= e($r['result']) ?></td><td><?= e($r['note']) ?></td></tr><?php endforeach; ?>
                 <?php if (!$daily): ?><tr><td colspan="7" class="muted">Seçili dönemde görüşme yok.</td></tr><?php endif; ?>
             </tbody></table></div>
