@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 $server = $env:BILNEX_SQL_SERVER
 if (-not $server) { $server = "localhost\BILNEXSQLCRM" }
 $database = $env:BILNEX_SQL_DATABASE
-if (-not $database) { $database = "BILNEXCRMDB" }
+if (-not $database) { $database = "BILNEX_CRMDB" }
 $username = $env:BILNEX_SQL_USERNAME
 $password = $env:BILNEX_SQL_PASSWORD
 
