@@ -743,9 +743,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             require_company_access($id);
         }
         $existingSqlCustomerId = null;
+        $existingAccountCode = '';
+        $existingBalanceAmount = 0.0;
+        $existingBalanceSide = '';
         if ($id > 0) {
-            $currentSqlCustomerId = (int) scalar('SELECT sql_customer_id FROM companies WHERE id = :id', [':id' => $id]);
+            $existingCompany = rows('SELECT sql_customer_id, account_code, balance_amount, balance_side FROM companies WHERE id = :id', [':id' => $id])[0] ?? [];
+            $currentSqlCustomerId = (int) ($existingCompany['sql_customer_id'] ?? 0);
             $existingSqlCustomerId = $currentSqlCustomerId > 0 ? $currentSqlCustomerId : null;
+            $existingAccountCode = (string) ($existingCompany['account_code'] ?? '');
+            $existingBalanceAmount = (float) ($existingCompany['balance_amount'] ?? 0);
+            $existingBalanceSide = (string) ($existingCompany['balance_side'] ?? '');
         }
         $responsible = (int) ($_POST['responsible_user_id'] ?? current_user()['id']);
         if (!can_view_all()) {
@@ -756,7 +763,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ':name' => trim($_POST['name'] ?? ''),
             ':sql_customer_id' => $existingSqlCustomerId,
             ':account_type' => normalize_company_account_type($submittedAccountType !== '' ? $submittedAccountType : 'Hedef Bayi'),
-            ':account_code' => trim($_POST['account_code'] ?? ''),
+            ':account_code' => $existingAccountCode,
             ':contact_person' => trim($_POST['contact_person'] ?? ''),
             ':phone' => trim($_POST['phone'] ?? ''),
             ':email' => trim($_POST['email'] ?? ''),
@@ -764,8 +771,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ':district' => trim($_POST['district'] ?? ''),
             ':address' => trim($_POST['address'] ?? ''),
             ':tax_no' => trim($_POST['tax_no'] ?? ''),
-            ':balance_amount' => (float) str_replace(',', '.', $_POST['balance_amount'] ?? 0),
-            ':balance_side' => trim($_POST['balance_side'] ?? ''),
+            ':balance_amount' => array_key_exists('balance_amount', $_POST) ? (float) str_replace(',', '.', $_POST['balance_amount']) : $existingBalanceAmount,
+            ':balance_side' => array_key_exists('balance_side', $_POST) ? trim($_POST['balance_side']) : $existingBalanceSide,
             ':status' => $_POST['status'] ?? 'Yeni kayıt',
             ':source' => trim($_POST['source'] ?? ''),
             ':responsible_user_id' => $responsible,
@@ -1349,6 +1356,7 @@ if ($page === 'company_form') {
         <?php endif; ?>
         <label>Cari adı <input name="name" value="<?= e($company['name'] ?? '') ?>" required></label>
         <label>SQL Customer Id <input class="readonly-input" name="sql_customer_id" inputmode="numeric" value="<?= e($company['sql_customer_id'] ?? '') ?>" placeholder="Kaydedince otomatik atanır" readonly aria-readonly="true"></label>
+        <label>Cari kodu <input class="readonly-input" name="account_code" value="<?= e($company['account_code'] ?? '') ?>" placeholder="Kaydedince otomatik atanır" readonly aria-readonly="true"></label>
         <label>Cari türü
             <select name="account_type">
                 <?php foreach (company_account_types() as $type): ?>
@@ -1357,15 +1365,12 @@ if ($page === 'company_form') {
             </select>
         </label>
         <label>Yetkili kişi <input name="contact_person" value="<?= e($company['contact_person'] ?? '') ?>"></label>
-        <label>Cari kodu <input name="account_code" value="<?= e($company['account_code'] ?? '') ?>"></label>
         <label>Vergi no <input name="tax_no" value="<?= e($company['tax_no'] ?? '') ?>"></label>
         <label>Telefon <input name="phone" value="<?= e($company['phone'] ?? '') ?>"></label>
         <label>E-posta <input type="email" name="email" value="<?= e($company['email'] ?? '') ?>"></label>
         <label>İl <input name="city" value="<?= e($company['city'] ?? '') ?>"></label>
         <label>İlçe <input name="district" value="<?= e($company['district'] ?? '') ?>"></label>
         <label class="wide">Adres <textarea name="address"><?= e($company['address'] ?? '') ?></textarea></label>
-        <label>Bakiye <input name="balance_amount" inputmode="decimal" value="<?= e($company['balance_amount'] ?? '') ?>"></label>
-        <label>B/A <input name="balance_side" value="<?= e($company['balance_side'] ?? '') ?>"></label>
         <?php if (!$usesSqlCustomerWrite): ?>
             <label>Durum
                 <select name="status">
