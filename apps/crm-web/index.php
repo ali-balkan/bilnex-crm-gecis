@@ -33,6 +33,31 @@ function pct($value, $max): int
     return max(2, min(100, (int) round(((float) $value / $max) * 100)));
 }
 
+function compact_metric_rows(array $rows, string $labelKey, string $valueKey, int $visibleRows = 6, string $otherLabel = 'Diğer'): array
+{
+    if (count($rows) <= $visibleRows) {
+        return $rows;
+    }
+
+    $visibleCount = max(1, $visibleRows - 1);
+    $topRows = array_slice($rows, 0, $visibleCount);
+    $otherTotal = 0;
+
+    foreach (array_slice($rows, $visibleCount) as $row) {
+        $otherTotal += (float) ($row[$valueKey] ?? 0);
+    }
+
+    if ($otherTotal > 0) {
+        $otherRow = $rows[0] ?? [];
+        $otherRow[$labelKey] = $otherLabel;
+        $otherRow[$valueKey] = $otherTotal;
+        $otherRow['_is_other'] = true;
+        $topRows[] = $otherRow;
+    }
+
+    return $topRows;
+}
+
 function dashboard_card(string $label, $value, string $hint = '', string $tone = '', string $href = ''): void
 {
     $tag = $href !== '' ? 'a' : 'article';
@@ -99,7 +124,7 @@ function render_trend_chart(array $rows, string $labelKey, string $valueKey): vo
     foreach ($rows as $row) {
         $max = max($max, (float) $row[$valueKey]);
     }
-    echo '<div class="trend-line" style="--points:' . max(1, count($rows)) . '">';
+    echo '<div class="trend-line' . (!$rows ? ' empty-chart' : '') . '" style="--points:' . max(1, count($rows)) . '">';
     foreach ($rows as $row) {
         echo '<div class="trend-point" title="' . e($row[$labelKey] . ': ' . $row[$valueKey]) . '"><i style="--value:' . pct($row[$valueKey], $max) . '"></i><span>' . e(substr((string) $row[$labelKey], 5)) . '</span></div>';
     }
@@ -944,6 +969,7 @@ if ($page === 'dashboard') {
         } else {
             $statusRows = rows('SELECT status, COUNT(*) total FROM companies GROUP BY status ORDER BY total DESC');
         }
+        $dashboardStatusRows = compact_metric_rows($statusRows, 'status', 'total', 6);
         $pipeline = rows('SELECT stage, COUNT(*) total, COALESCE(SUM(estimated_amount), 0) amount FROM opportunities GROUP BY stage ORDER BY CASE stage WHEN "Yeni fırsat" THEN 1 WHEN "Görüşme yapılıyor" THEN 2 WHEN "Teklif verildi" THEN 3 WHEN "Sözleşme bekleniyor" THEN 4 WHEN "Kazanıldı" THEN 5 WHEN "Kaybedildi" THEN 6 ELSE 7 END');
         $trend = rows('SELECT date(interaction_date) day, COUNT(*) total FROM interactions WHERE date(interaction_date) >= date(:today, "-6 day") GROUP BY date(interaction_date) ORDER BY day', [':today' => $today]);
         $overdueRows = rows('SELECT c.id, c.name, c.next_followup_date, u.full_name responsible_name FROM companies c LEFT JOIN users u ON u.id = c.responsible_user_id WHERE c.next_followup_date IS NOT NULL AND date(c.next_followup_date) < :today ORDER BY c.next_followup_date ASC LIMIT 8', [':today' => $today]);
@@ -954,9 +980,9 @@ if ($page === 'dashboard') {
         render_trend_chart($trend, 'day', 'total');
         echo '</article>';
 
-        echo '<article class="panel chart-panel"><div class="section-title"><h2>Bayi Durum Dağılımı</h2><a class="btn small" href="' . e(app_url('companies')) . '">Detaylar</a></div><div class="analytics-split">';
-        render_donut_chart($statusRows, 'status', 'total');
-        render_linked_bar_list($statusRows, 'status', 'total', static fn($row) => app_url('companies', ['account_type' => $row['status']]));
+        echo '<article class="panel chart-panel dashboard-status-panel"><div class="section-title"><h2>Bayi Durum Dağılımı</h2><a class="btn small" href="' . e(app_url('companies')) . '">Detaylar</a></div><div class="analytics-split">';
+        render_donut_chart($dashboardStatusRows, 'status', 'total');
+        render_linked_bar_list($dashboardStatusRows, 'status', 'total', static fn($row) => !empty($row['_is_other']) ? app_url('companies') : app_url('companies', ['account_type' => $row['status']]));
         echo '</div>';
         echo '</article>';
 
