@@ -488,6 +488,19 @@ input:focus, select:focus, textarea:focus {
     border-color: var(--primary);
 }
 
+input[readonly],
+.readonly-input {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+    color: #667085;
+    cursor: not-allowed;
+}
+
+.readonly-input::placeholder {
+    color: #667085;
+    opacity: 1;
+}
+
 textarea { min-height: 96px; resize: vertical; }
 input[list] {
     min-width: 0;

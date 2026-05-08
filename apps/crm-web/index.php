@@ -742,14 +742,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($id > 0) {
             require_company_access($id);
         }
+        $existingSqlCustomerId = null;
+        if ($id > 0) {
+            $currentSqlCustomerId = (int) scalar('SELECT sql_customer_id FROM companies WHERE id = :id', [':id' => $id]);
+            $existingSqlCustomerId = $currentSqlCustomerId > 0 ? $currentSqlCustomerId : null;
+        }
         $responsible = (int) ($_POST['responsible_user_id'] ?? current_user()['id']);
         if (!can_view_all()) {
             $responsible = (int) current_user()['id'];
         }
+        $submittedAccountType = trim((string) ($_POST['account_type'] ?? ''));
         $data = [
             ':name' => trim($_POST['name'] ?? ''),
-            ':sql_customer_id' => ((int) ($_POST['sql_customer_id'] ?? 0)) > 0 ? (int) $_POST['sql_customer_id'] : null,
-            ':account_type' => normalize_company_account_type($_POST['account_type'] ?? ''),
+            ':sql_customer_id' => $existingSqlCustomerId,
+            ':account_type' => normalize_company_account_type($submittedAccountType !== '' ? $submittedAccountType : 'Hedef Bayi'),
             ':account_code' => trim($_POST['account_code'] ?? ''),
             ':contact_person' => trim($_POST['contact_person'] ?? ''),
             ':phone' => trim($_POST['phone'] ?? ''),
@@ -1331,6 +1337,7 @@ if ($page === 'company_form') {
         require_company_access($id);
         $company = rows('SELECT * FROM companies WHERE id = :id', [':id' => $id])[0] ?? null;
     }
+    $selectedAccountType = $company['account_type'] ?? 'Hedef Bayi';
     render_header($company ? 'Cari Düzenle' : 'Yeni Cari');
     ?>
     <form class="panel form-grid" method="post" action="<?= e(app_url('save_company')) ?>">
@@ -1341,11 +1348,11 @@ if ($page === 'company_form') {
             <div class="alert wide">Cari kaydedilince Yeni Satış Fırsatı ekranına seçili olarak dönecek.</div>
         <?php endif; ?>
         <label>Cari adı <input name="name" value="<?= e($company['name'] ?? '') ?>" required></label>
-        <label>SQL Customer Id <input name="sql_customer_id" inputmode="numeric" value="<?= e($company['sql_customer_id'] ?? '') ?>" placeholder="Bilnex Customer.Id"></label>
+        <label>SQL Customer Id <input class="readonly-input" name="sql_customer_id" inputmode="numeric" value="<?= e($company['sql_customer_id'] ?? '') ?>" placeholder="Kaydedince otomatik atanır" readonly aria-readonly="true"></label>
         <label>Cari türü
             <select name="account_type">
                 <?php foreach (company_account_types() as $type): ?>
-                    <option value="<?= e($type) ?>"<?= selected($company['account_type'] ?? 'İş Ortağı', $type) ?>><?= e($type) ?></option>
+                    <option value="<?= e($type) ?>"<?= selected($selectedAccountType, $type) ?>><?= e($type) ?></option>
                 <?php endforeach; ?>
             </select>
         </label>
