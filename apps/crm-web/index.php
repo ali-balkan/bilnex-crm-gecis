@@ -64,6 +64,51 @@ function render_bar_list(array $rows, string $labelKey, string $valueKey, string
     echo '</div>';
 }
 
+function render_linked_bar_list(array $rows, string $labelKey, string $valueKey, callable $hrefForRow, string $empty = 'Veri yok'): void
+{
+    $max = 0;
+    foreach ($rows as $row) {
+        $max = max($max, (float) $row[$valueKey]);
+    }
+    echo '<div class="bar-list">';
+    foreach ($rows as $row) {
+        $value = (float) $row[$valueKey];
+        $href = (string) $hrefForRow($row);
+        echo '<a class="bar-row" href="' . e($href) . '">';
+        echo '<div class="bar-meta"><span>' . e($row[$labelKey]) . '</span><strong>' . e($value) . '</strong></div>';
+        echo '<div class="bar-track"><span style="width:' . pct($value, $max) . '%"></span></div>';
+        echo '</a>';
+    }
+    if (!$rows) {
+        echo '<p class="muted">' . e($empty) . '</p>';
+    }
+    echo '</div>';
+}
+
+function render_donut_chart(array $rows, string $labelKey, string $valueKey): void
+{
+    $total = array_sum(array_map(static fn($row) => (float) $row[$valueKey], $rows));
+    $first = $total > 0 && isset($rows[0]) ? round(((float) $rows[0][$valueKey] / $total) * 100) : 0;
+    $second = $total > 0 && isset($rows[1]) ? $first + round(((float) $rows[1][$valueKey] / $total) * 100) : $first;
+    echo '<div class="donut-chart" style="--p1:' . e($first) . ';--p2:' . e($second) . '" data-total="' . e((int) $total) . '"></div>';
+}
+
+function render_trend_chart(array $rows, string $labelKey, string $valueKey): void
+{
+    $max = 0;
+    foreach ($rows as $row) {
+        $max = max($max, (float) $row[$valueKey]);
+    }
+    echo '<div class="trend-line" style="--points:' . max(1, count($rows)) . '">';
+    foreach ($rows as $row) {
+        echo '<div class="trend-point" title="' . e($row[$labelKey] . ': ' . $row[$valueKey]) . '"><i style="--value:' . pct($row[$valueKey], $max) . '"></i><span>' . e(substr((string) $row[$labelKey], 5)) . '</span></div>';
+    }
+    if (!$rows) {
+        echo '<p class="muted">Veri yok</p>';
+    }
+    echo '</div>';
+}
+
 function render_amount_bar_list(array $rows, string $labelKey, string $valueKey, string $amountKey): void
 {
     $max = 0;
@@ -126,10 +171,27 @@ function render_login(): void
     <?php
 }
 
+function nav_icon(string $target): string
+{
+    $paths = [
+        'dashboard' => '<path d="M3 13h8V3H3v10Zm0 8h8v-6H3v6Zm10 0h8V11h-8v10Zm0-18v6h8V3h-8Z"/>',
+        'users' => '<path d="M16 11a4 4 0 1 0-3.3-6.3A5 5 0 0 1 16 11Zm-8 0a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 2c-3.3 0-6 1.7-6 3.8V20h12v-3.2C14 14.7 11.3 13 8 13Zm8 0c-.7 0-1.4.1-2 .3 1.2.9 2 2.1 2 3.5V20h6v-3.2c0-2.1-2.7-3.8-6-3.8Z"/>',
+        'companies' => '<path d="M4 21V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v16H4Zm4-12h2V7H8v2Zm0 4h2v-2H8v2Zm0 4h2v-2H8v2Zm4-8h2V7h-2v2Zm0 4h2v-2h-2v2Zm0 4h2v-2h-2v2Zm7 4v-9h1a2 2 0 0 1 2 2v7h-3Z"/>',
+        'followups' => '<path d="M7 2h2v3h6V2h2v3h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2V2Zm12 8H5v9h14v-9Zm-9 6 6-6 1.4 1.4L10 18l-3.4-3.4L8 13.2l2 2Z"/>',
+        'opportunities' => '<path d="M4 4h16v4H4V4Zm0 6h10v4H4v-4Zm0 6h16v4H4v-4Zm12-6h4v4h-4v-4Z"/>',
+        'reports' => '<path d="M4 19h16v2H4v-2Zm2-2V9h3v8H6Zm5 0V3h3v14h-3Zm5 0v-6h3v6h-3Z"/>',
+    ];
+    $path = $paths[$target] ?? '<path d="M4 4h16v16H4z"/>';
+    return '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">' . $path . '</svg>';
+}
+
 function render_header(string $title): void
 {
     $user = current_user();
     $flash = flash();
+    $openTaskCount = can_view_all()
+        ? (int) scalar("SELECT COUNT(*) FROM tasks WHERE status = 'Açık'")
+        : (int) scalar("SELECT COUNT(*) FROM tasks WHERE status = 'Açık' AND (assigned_to = :uid OR assigned_by = :uid)", [':uid' => $user['id']]);
     $nav = [
         ['dashboard', 'Dashboard'],
         ['companies', 'Cariler'],
@@ -162,7 +224,7 @@ function render_header(string $title): void
                 </a>
                 <nav>
                     <?php foreach ($nav as [$target, $label]): ?>
-                        <a class="<?= ($_GET['page'] ?? 'dashboard') === $target ? 'active' : '' ?>" href="<?= e(app_url($target)) ?>"><?= e($label) ?></a>
+                        <a class="<?= ($_GET['page'] ?? 'dashboard') === $target ? 'active' : '' ?>" href="<?= e(app_url($target)) ?>"><span class="nav-icon"><?= nav_icon($target) ?></span><span><?= e($label) ?></span></a>
                     <?php endforeach; ?>
                 </nav>
                 <div class="user-box">
@@ -177,7 +239,10 @@ function render_header(string $title): void
                         <h1><?= e($title) ?></h1>
                         <p><?= e(date('d.m.Y')) ?></p>
                     </div>
-                    <a class="btn" href="<?= e(app_url('company_form')) ?>">Yeni cari</a>
+                    <div class="topbar-actions">
+                        <a class="notification-pill" href="<?= e(app_url('followups', ['status' => 'Açık'])) ?>">Açık iş <strong><?= e($openTaskCount) ?></strong></a>
+                        <a class="btn" href="<?= e(app_url('company_form')) ?>">Yeni cari</a>
+                    </div>
                 </header>
                 <?php if ($flash): ?>
                     <div class="alert alert-<?= e($flash['type']) ?>"><?= e($flash['message']) ?></div>
@@ -202,6 +267,7 @@ function render_footer(): void
                 });
             });
         </script>
+        <script src="<?= e(rtrim(app_config('base_url'), '/')) ?>/assets/app.js" defer></script>
     </body>
     </html>
     <?php
@@ -234,6 +300,23 @@ function filter_bar(string $target, array $extra = []): void
         <button class="btn" type="submit">Filtrele</button>
     </form>
     <?php
+}
+
+function render_pagination(string $target, int $pageNumber, int $perPage, int $total): void
+{
+    $pages = max(1, (int) ceil($total / max(1, $perPage)));
+    if ($pages <= 1) {
+        return;
+    }
+    $currentParams = $_GET;
+    $currentParams['page'] = $target;
+    echo '<nav class="pagination" aria-label="Sayfalama">';
+    for ($i = max(1, $pageNumber - 2); $i <= min($pages, $pageNumber + 2); $i++) {
+        $currentParams['p'] = $i;
+        $class = $i === $pageNumber ? 'btn small current' : 'btn small';
+        echo '<a class="' . e($class) . '" href="' . e(app_url($target, $currentParams)) . '">' . e($i) . '</a>';
+    }
+    echo '</nav>';
 }
 
 function normalize_import_key(string $value): string
@@ -682,10 +765,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':company_id' => $companyId,
             ]);
             $statusByResult = [
-                'Olumlu' => 'GÃ¶rÃ¼ÅŸÃ¼ldÃ¼',
+                'Olumlu' => 'Görüşüldü',
                 'Olumsuz' => 'Olumsuz',
                 'Teklif istiyor' => 'Teklif bekliyor',
-                'UlaÅŸÄ±lamadÄ±' => 'UlaÅŸÄ±lamadÄ±',
+                'Ulaşılamadı' => 'Ulaşılamadı',
             ];
             $companyStatus = $statusByResult[$result] ?? null;
             $closesFollowup = $nextFollowupDate === null && in_array($result, ['Olumlu', 'Olumsuz'], true);
@@ -719,7 +802,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             if (!can_view_all() && (int) $existing['salesperson_id'] !== (int) current_user()['id']) {
                 http_response_code(403);
-                exit('Bu satÄ±ÅŸ fÄ±rsatÄ±nÄ± dÃ¼zenleme yetkiniz yok.');
+                exit('Bu satış fırsatını düzenleme yetkiniz yok.');
             }
             require_company_access((int) $existing['company_id']);
         }
@@ -832,8 +915,10 @@ if ($page === 'dashboard') {
         render_bar_list($staff, 'full_name', 'total');
         echo '</article>';
 
-        echo '<article class="panel chart-panel"><div class="section-title"><h2>Cari türü dağılımı</h2><a class="btn small" href="' . e(app_url('companies')) . '">Liste</a></div>';
-        render_bar_list($statusRows, 'status', 'total');
+        echo '<article class="panel chart-panel"><div class="section-title"><h2>Cari türü dağılımı</h2><a class="btn small" href="' . e(app_url('companies')) . '">Liste</a></div><div class="analytics-split">';
+        render_donut_chart($statusRows, 'status', 'total');
+        render_linked_bar_list($statusRows, 'status', 'total', static fn($row) => app_url('companies', ['account_type' => $row['status']]));
+        echo '</div>';
         echo '</article>';
 
         echo '<article class="panel chart-panel wide-panel"><div class="section-title"><h2>Satış pipeline</h2><a class="btn small" href="' . e(app_url('opportunities')) . '">Fırsatlar</a></div>';
@@ -847,7 +932,7 @@ if ($page === 'dashboard') {
         echo '</div></article>';
 
         echo '<article class="panel chart-panel"><h2>Son 7 gün görüşme trendi</h2>';
-        render_bar_list($trend, 'day', 'total');
+        render_trend_chart($trend, 'day', 'total');
         echo '</article>';
 
         echo '<article class="panel chart-panel"><h2>Satış aşaması tutarları</h2>';
@@ -1004,13 +1089,17 @@ if ($page === 'users') {
                     $userWhere = ' WHERE full_name LIKE :q OR username LIKE :q';
                     $userParams[':q'] = '%' . $_GET['q'] . '%';
                 }
-                $userRows = rows("SELECT * FROM users {$userWhere} ORDER BY created_at DESC", $userParams);
+                $userPage = max(1, (int) ($_GET['p'] ?? 1));
+                $userPerPage = 25;
+                $userOffset = ($userPage - 1) * $userPerPage;
+                $userTotal = (int) scalar("SELECT COUNT(*) FROM users {$userWhere}", $userParams);
+                $userRows = rows("SELECT * FROM users {$userWhere} ORDER BY created_at DESC LIMIT {$userPerPage} OFFSET {$userOffset}", $userParams);
             ?>
             <div class="table-wrap"><table>
                 <thead><tr><th>Ad</th><th>Kullanıcı adı</th><th>Rol</th><th>Durum</th><th></th></tr></thead>
                 <tbody>
                 <?php foreach ($userRows as $row): ?>
-                    <tr>
+                    <tr data-href="<?= e(app_url('users', ['id' => $row['id']])) ?>">
                         <td><?= e($row['full_name']) ?></td>
                         <td><?= e($row['username']) ?></td>
                         <td><?= e(role_label($row['role'])) ?></td>
@@ -1020,6 +1109,7 @@ if ($page === 'users') {
                 <?php endforeach; ?>
                 </tbody>
             </table></div>
+            <?php render_pagination('users', $userPage, $userPerPage, $userTotal); ?>
         </section>
     </section>
     <?php
@@ -1067,17 +1157,25 @@ if ($page === 'companies') {
         $extras['responsible_user_id'] = ['_label' => 'Sorumlu', 'items' => $userOptions];
     }
     filter_bar('companies', $extras);
+    $pageNumber = max(1, (int) ($_GET['p'] ?? 1));
+    $perPage = (int) ($_GET['per_page'] ?? 100);
+    if (!in_array($perPage, [50, 100, 250, 500], true)) {
+        $perPage = 100;
+    }
+    $offset = ($pageNumber - 1) * $perPage;
     $sqlCustomerReader = $usingSqlServerCompanies ? bilnex_customer_reader() : null;
     $sqlCustomerTypeId = $usingSqlServerCompanies && !empty($_GET['account_type'])
         ? company_account_type_sql_id($_GET['account_type'])
         : null;
+    $companyTotal = $usingSqlServerCompanies
+        ? 0
+        : (int) scalar("SELECT COUNT(*) FROM companies c {$where}", $params);
     $companies = $usingSqlServerCompanies
-        ? sql_customer_rows_for_company_list(250, $sqlCustomerTypeId)
-        : rows("SELECT c.*, u.full_name responsible_name FROM companies c LEFT JOIN users u ON u.id = c.responsible_user_id {$where} ORDER BY c.updated_at DESC", $params);
+        ? sql_customer_rows_for_company_list($perPage, $sqlCustomerTypeId, $offset, (string) ($_GET['q'] ?? ''))
+        : rows("SELECT c.*, u.full_name responsible_name FROM companies c LEFT JOIN users u ON u.id = c.responsible_user_id {$where} ORDER BY c.updated_at DESC LIMIT {$perPage} OFFSET {$offset}", $params);
     $sqlCustomerReadError = $sqlCustomerReader instanceof CustomerReadRepository ? $sqlCustomerReader->lastError() : null;
-    $companyTotal = count($companies);
     if ($usingSqlServerCompanies && !$sqlCustomerReadError && $sqlCustomerReader instanceof CustomerReadRepository) {
-        $activeCustomerTotal = $sqlCustomerReader->countActiveCustomers($sqlCustomerTypeId);
+        $activeCustomerTotal = $sqlCustomerReader->countActiveCustomers($sqlCustomerTypeId, (string) ($_GET['q'] ?? ''));
         $sqlCustomerReadError = $sqlCustomerReader->lastError();
         if (!$sqlCustomerReadError) {
             $companyTotal = $activeCustomerTotal;
@@ -1101,12 +1199,24 @@ if ($page === 'companies') {
                 <h2>Cari listesi</h2>
                 <p class="muted"><?= e($companyTotal) ?> kayıttan <?= e(count($companies)) ?> kayıt gösteriliyor.</p>
             </div>
+            <form class="inline-form" method="get">
+                <?php foreach ($_GET as $name => $value): ?>
+                    <?php if (!in_array($name, ['page', 'per_page', 'p'], true)): ?><input type="hidden" name="<?= e($name) ?>" value="<?= e($value) ?>"><?php endif; ?>
+                <?php endforeach; ?>
+                <input type="hidden" name="page" value="companies">
+                <select name="per_page" aria-label="Sayfa başına kayıt">
+                    <?php foreach ([50, 100, 250, 500] as $size): ?>
+                        <option value="<?= e($size) ?>"<?= selected($perPage, $size) ?>><?= e($size) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <button class="btn small" type="submit">Uygula</button>
+            </form>
         </div>
         <div class="table-wrap"><table class="companies-table">
             <thead><tr><th>Cari kodu</th><th>Cari</th><th>Cari türü</th><th>Yetkili</th><th>Telefon</th><th>İl</th><?php if (!$usingSqlServerCompanies): ?><th>Durum</th><?php endif; ?><th>Sorumlu</th><th>Sonraki takip</th><th>Aksiyon</th></tr></thead>
             <tbody>
             <?php foreach ($companies as $row): ?>
-                <tr>
+                <tr<?= !$usingSqlServerCompanies ? ' data-href="' . e(app_url('company_view', ['id' => $row['id']])) . '"' : '' ?>>
                     <td><?= e($row['account_code'] ?? '') ?></td>
                     <td>
                         <?php if ($usingSqlServerCompanies): ?>
@@ -1133,6 +1243,7 @@ if ($page === 'companies') {
             <?php endforeach; ?>
             </tbody>
         </table></div>
+        <?php render_pagination('companies', $pageNumber, $perPage, $companyTotal); ?>
     </section>
     <?php
     render_footer();
@@ -1318,6 +1429,13 @@ if ($page === 'task_form') {
 
 if ($page === 'followups') {
     render_header('Takip Listesi');
+    $taskUsers = active_users();
+    $taskCompanyWhere = ' WHERE 1 = 1';
+    $taskCompanyParams = [];
+    [$taskScopeSql, $taskScopeParams] = owned_company_condition('c');
+    $taskCompanyWhere .= $taskScopeSql;
+    $taskCompanyParams += $taskScopeParams;
+    $taskCompanies = rows("SELECT c.id, c.name, c.account_code, c.account_type, c.sql_customer_id FROM companies c {$taskCompanyWhere} ORDER BY c.name LIMIT 300", $taskCompanyParams);
     $monthInput = $_GET['month'] ?? date('Y-m');
     if (!preg_match('/^\d{4}-\d{2}$/', $monthInput)) {
         $monthInput = date('Y-m');
@@ -1350,7 +1468,7 @@ if ($page === 'followups') {
                 <a class="btn" href="<?= e(app_url('followups', ['month' => $prevMonth])) ?>">Önceki</a>
                 <a class="btn" href="<?= e(app_url('followups')) ?>">Bu ay</a>
                 <a class="btn" href="<?= e(app_url('followups', ['month' => $nextMonth])) ?>">Sonraki</a>
-                <a class="btn primary" href="<?= e(app_url('task_form')) ?>">İş ata</a>
+                <button class="btn primary" type="button" data-open-dialog="#task-dialog">İş ata</button>
             </div>
         </div>
         <h3 class="calendar-title"><?= e($monthStartDate->format('m.Y')) ?></h3>
@@ -1381,6 +1499,35 @@ if ($page === 'followups') {
             <?php endfor; ?>
         </div>
     </section>
+
+    <dialog class="modal" id="task-dialog">
+        <div class="modal-head">
+            <h2>İş ata</h2>
+            <button class="btn small" type="button" data-close-dialog>Kapat</button>
+        </div>
+        <form class="modal-body form-grid" method="post" action="<?= e(app_url('save_task')) ?>">
+            <?= csrf_field() ?>
+            <label>Konu <input name="title" required></label>
+            <label>Sorumlu
+                <select name="assigned_to" required>
+                    <?php foreach ($taskUsers as $user): ?>
+                        <option value="<?= e($user['id']) ?>"<?= selected(current_user()['id'], $user['id']) ?>><?= e($user['full_name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label>Termin tarihi <input type="date" name="due_date"></label>
+            <label>İlgili cari
+                <select name="company_id">
+                    <option value="">Bağlantı yok</option>
+                    <?php foreach ($taskCompanies as $company): ?>
+                        <option value="<?= e($company['id']) ?>"><?= e(company_lookup_label($company)) ?><?= $company['sql_customer_id'] ? ' · SQL #' . e($company['sql_customer_id']) : '' ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label class="wide">Açıklama <textarea name="description"></textarea></label>
+            <div class="actions wide"><button class="btn primary" type="submit">İşi ata</button></div>
+        </form>
+    </dialog>
 
     <?php if (can_view_all()): ?>
         <?php
@@ -1593,11 +1740,35 @@ if ($page === 'opportunities') {
         'stage_group' => ['_label' => 'Fırsat durumu', 'items' => ['open' => 'Açık fırsatlar']],
         'stage' => ['_label' => 'Aşama', 'items' => array_combine(opportunity_stages(), opportunity_stages())],
     ]);
-    echo '<p><a class="btn primary" href="' . e(app_url('opportunity_form')) . '">Yeni satış fırsatı</a></p>';
     $items = rows("SELECT o.*, c.name company_name, c.account_type company_account_type, c.sql_customer_id company_sql_customer_id, u.full_name salesperson_name FROM opportunities o JOIN companies c ON c.id = o.company_id LEFT JOIN users u ON u.id = o.salesperson_id {$where} ORDER BY o.updated_at DESC", $params);
+    $itemsByStage = [];
+    foreach ($items as $item) {
+        $itemsByStage[$item['stage']][] = $item;
+    }
     ?>
+    <div class="toolbar">
+        <a class="btn primary" href="<?= e(app_url('opportunity_form')) ?>">Yeni satış fırsatı</a>
+        <button class="btn" type="button" data-export-table="#opportunities-table" data-filename="satis-firsatlari.csv">CSV indir</button>
+    </div>
     <section class="panel">
-        <div class="table-wrap"><table class="opportunities-table">
+        <div class="section-title"><h2>Kanban görünümü</h2><span class="muted">Aşamaya göre açık ve kapanan fırsatlar</span></div>
+        <div class="kanban-board">
+            <?php foreach (opportunity_stages() as $stage): ?>
+                <section class="kanban-column">
+                    <h3><?= e($stage) ?> <span class="badge soft"><?= e(count($itemsByStage[$stage] ?? [])) ?></span></h3>
+                    <?php foreach (array_slice($itemsByStage[$stage] ?? [], 0, 6) as $card): ?>
+                        <a class="kanban-card" href="<?= e(app_url('opportunity_form', ['id' => $card['id']])) ?>">
+                            <strong><?= e($card['company_name']) ?></strong>
+                            <span><?= e($card['product_service']) ?></span>
+                            <small><?= e(money($card['estimated_amount'])) ?> · <?= e($card['expected_close_date'] ?: '-') ?></small>
+                        </a>
+                    <?php endforeach; ?>
+                </section>
+            <?php endforeach; ?>
+        </div>
+    </section>
+    <section class="panel">
+        <div class="table-wrap"><table class="opportunities-table" id="opportunities-table">
             <thead><tr><th>Cari</th><th>Cari türü</th><th>SQL Customer</th><th>Satışçı</th><th>Ürün / hizmet</th><th>Tutar</th><th>Aşama</th><th>Kapanış</th><th></th></tr></thead>
             <tbody>
             <?php foreach ($items as $row): ?>
@@ -1629,7 +1800,7 @@ if ($page === 'opportunity_form') {
         if ($opp) {
             if (!can_view_all() && (int) $opp['salesperson_id'] !== (int) current_user()['id']) {
                 http_response_code(403);
-                exit('Bu satÄ±ÅŸ fÄ±rsatÄ±nÄ± dÃ¼zenleme yetkiniz yok.');
+                exit('Bu satış fırsatını düzenleme yetkiniz yok.');
             }
             require_company_access((int) $opp['company_id']);
         }
@@ -1775,6 +1946,8 @@ if ($page === 'reports') {
             <a class="btn" href="<?= e(app_url('reports', ['date_filter' => 'today'])) ?>">Bugün</a>
             <a class="btn" href="<?= e(app_url('reports', ['date_filter' => 'week'])) ?>">Bu hafta</a>
             <a class="btn" href="<?= e(app_url('reports', ['date_filter' => 'month'])) ?>">Bu ay</a>
+            <button class="btn" type="button" onclick="window.print()">PDF yazdır</button>
+            <button class="btn" type="button" data-export-table="#daily-report-table" data-filename="bilnex-rapor.csv">CSV indir</button>
         </div>
     </section>
     <section class="stats-grid">
@@ -1802,11 +1975,14 @@ if ($page === 'reports') {
         </article>
         <article class="panel chart-panel">
             <h2>Cari türü dağılımı</h2>
-            <?php render_bar_list($typeReport, 'account_type', 'total'); ?>
+            <div class="analytics-split">
+                <?php render_donut_chart($typeReport, 'account_type', 'total'); ?>
+                <?php render_linked_bar_list($typeReport, 'account_type', 'total', static fn($row) => app_url('companies', ['account_type' => $row['account_type']])); ?>
+            </div>
         </article>
         <article class="panel chart-panel">
             <h2>Günlük görüşme trendi</h2>
-            <?php render_bar_list($interactionTrend, 'day', 'total'); ?>
+            <?php render_trend_chart($interactionTrend, 'day', 'total'); ?>
         </article>
         <article class="panel chart-panel wide-panel">
             <div class="section-title"><h2>Satış fırsatı raporu</h2><a class="btn small" href="<?= e(app_url('opportunities')) ?>">Fırsatları aç</a></div>
@@ -1823,7 +1999,7 @@ if ($page === 'reports') {
         </article>
         <article class="panel">
             <h2>Günlük görüşme listesi</h2>
-            <div class="table-wrap"><table><thead><tr><th>Tarih</th><th>Cari</th><th>Cari türü</th><th>Personel</th><th>Tür</th><th>Sonuç</th><th>Not</th></tr></thead><tbody>
+            <div class="table-wrap"><table id="daily-report-table"><thead><tr><th>Tarih</th><th>Cari</th><th>Cari türü</th><th>Personel</th><th>Tür</th><th>Sonuç</th><th>Not</th></tr></thead><tbody>
                 <?php foreach ($daily as $r): ?><tr><td><?= e($r['interaction_date']) ?></td><td><?= e($r['company_name']) ?></td><td><?= e($r['company_account_type'] ?? 'İş Ortağı') ?></td><td><?= e($r['user_name']) ?></td><td><?= e($r['type']) ?></td><td><?= e($r['result']) ?></td><td><?= e($r['note']) ?></td></tr><?php endforeach; ?>
                 <?php if (!$daily): ?><tr><td colspan="7" class="muted">Seçili dönemde görüşme yok.</td></tr><?php endif; ?>
             </tbody></table></div>

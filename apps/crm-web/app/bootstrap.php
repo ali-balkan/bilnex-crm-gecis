@@ -104,9 +104,9 @@ function sql_customer_type_label(int $customerTypeId): string
     return company_account_type_by_sql_id($customerTypeId) ?? 'Müşteri';
 }
 
-function sql_customer_rows_for_company_list(int $limit = 250, ?int $customerTypeId = null): array
+function sql_customer_rows_for_company_list(int $limit = 250, ?int $customerTypeId = null, int $offset = 0, string $query = ''): array
 {
-    $items = bilnex_customer_reader()->findActiveCustomers($limit, $customerTypeId);
+    $items = bilnex_customer_reader()->findActiveCustomersPage($limit, $offset, $customerTypeId, $query);
 
     return array_map(static function (array $row): array {
         return [
@@ -165,7 +165,7 @@ function init_db(): void
             sql_customer_id INTEGER,
             name TEXT NOT NULL,
             account_code TEXT,
-            account_type TEXT NOT NULL DEFAULT 'Ä°ÅŸ OrtaÄŸÄ±',
+            account_type TEXT NOT NULL DEFAULT 'İş Ortağı',
             contact_person TEXT,
             phone TEXT,
             email TEXT,
@@ -175,7 +175,7 @@ function init_db(): void
             tax_no TEXT,
             balance_amount REAL NOT NULL DEFAULT 0,
             balance_side TEXT,
-            status TEXT NOT NULL DEFAULT 'Yeni kayÄ±t',
+            status TEXT NOT NULL DEFAULT 'Yeni kayıt',
             source TEXT,
             responsible_user_id INTEGER,
             next_followup_date TEXT,
@@ -209,7 +209,7 @@ function init_db(): void
             salesperson_id INTEGER,
             product_service TEXT NOT NULL,
             estimated_amount REAL NOT NULL DEFAULT 0,
-            stage TEXT NOT NULL DEFAULT 'Yeni fÄ±rsat',
+            stage TEXT NOT NULL DEFAULT 'Yeni fırsat',
             expected_close_date TEXT,
             note TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -227,7 +227,7 @@ function init_db(): void
             assigned_by INTEGER,
             assigned_to INTEGER,
             due_date TEXT,
-            status TEXT NOT NULL DEFAULT 'AÃ§Ä±k',
+            status TEXT NOT NULL DEFAULT 'Açık',
             completion_note TEXT,
             completed_at TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -255,9 +255,9 @@ function init_db(): void
         $pdo->exec("ALTER TABLE companies ADD COLUMN balance_side TEXT");
     }
     if (!in_array('account_type', $companyColumnNames, true)) {
-        $pdo->exec("ALTER TABLE companies ADD COLUMN account_type TEXT NOT NULL DEFAULT 'Ä°ÅŸ OrtaÄŸÄ±'");
+        $pdo->exec("ALTER TABLE companies ADD COLUMN account_type TEXT NOT NULL DEFAULT 'İş Ortağı'");
     }
-    $pdo->exec("UPDATE companies SET account_type = 'Ä°ÅŸ OrtaÄŸÄ±' WHERE account_type IS NULL OR account_type = ''");
+    $pdo->exec("UPDATE companies SET account_type = 'İş Ortağı' WHERE account_type IS NULL OR account_type = ''");
 
     $taskColumns = $pdo->query('PRAGMA table_info(tasks)')->fetchAll();
     $taskColumnNames = array_map(fn($column) => $column['name'], $taskColumns);
@@ -335,7 +335,7 @@ function verify_csrf(): void
     $token = $_POST['csrf_token'] ?? '';
     if (!hash_equals($_SESSION['csrf_token'] ?? '', $token)) {
         http_response_code(419);
-        exit('Oturum doÄŸrulama hatasÄ±.');
+        exit('Oturum doğrulama hatası.');
     }
 }
 
@@ -382,9 +382,9 @@ function role_label(string $role): string
     $role = normalize_role($role);
     return [
         ROLE_ADMIN => 'Admin',
-        ROLE_MANAGER => 'YÃ¶netici',
-        ROLE_CHANNEL => 'Bayi Kanal UzmanÄ± / YÃ¶neticisi',
-        ROLE_SALES => 'SatÄ±ÅŸÃ§Ä± / Saha SatÄ±ÅŸ',
+        ROLE_MANAGER => 'Yönetici',
+        ROLE_CHANNEL => 'Bayi Kanal Uzmanı / Yöneticisi',
+        ROLE_SALES => 'Satışçı / Saha Satış',
     ][$role] ?? $role;
 }
 
@@ -392,15 +392,15 @@ function role_options(): array
 {
     return [
         ROLE_ADMIN => 'Admin',
-        ROLE_MANAGER => 'YÃ¶netici',
-        ROLE_CHANNEL => 'Bayi Kanal UzmanÄ± / YÃ¶neticisi',
-        ROLE_SALES => 'SatÄ±ÅŸÃ§Ä± / Saha SatÄ±ÅŸ',
+        ROLE_MANAGER => 'Yönetici',
+        ROLE_CHANNEL => 'Bayi Kanal Uzmanı / Yöneticisi',
+        ROLE_SALES => 'Satışçı / Saha Satış',
     ];
 }
 
 function company_statuses(): array
 {
-    return ['Yeni kayÄ±t', 'GÃ¶rÃ¼ÅŸÃ¼ldÃ¼', 'Teklif bekliyor', 'Takipte', 'Aktif bayi', 'Olumsuz', 'UlaÅŸÄ±lamadÄ±'];
+    return ['Yeni kayıt', 'Görüşüldü', 'Teklif bekliyor', 'Takipte', 'Aktif bayi', 'Olumsuz', 'Ulaşılamadı'];
 }
 
 function company_account_types(): array
@@ -466,18 +466,6 @@ function normalize_company_account_type(?string $value): string
         'Ö' => 'o',
         'ç' => 'c',
         'Ç' => 'c',
-        'Ä±' => 'i',
-        'Ä°' => 'i',
-        'ÅŸ' => 's',
-        'Å' => 's',
-        'ÄŸ' => 'g',
-        'Ä' => 'g',
-        'Ã¼' => 'u',
-        'Ãœ' => 'u',
-        'Ã¶' => 'o',
-        'Ã–' => 'o',
-        'Ã§' => 'c',
-        'Ã‡' => 'c',
     ]);
     $key = preg_replace('/[^a-z0-9]+/', '', $key) ?? '';
 
@@ -512,22 +500,22 @@ function normalize_company_account_type(?string $value): string
 
 function interaction_types(): array
 {
-    return ['Telefon', 'WhatsApp', 'E-posta', 'Online toplantÄ±', 'YÃ¼z yÃ¼ze gÃ¶rÃ¼ÅŸme', 'Saha ziyareti'];
+    return ['Telefon', 'WhatsApp', 'E-posta', 'Online toplantı', 'Yüz yüze görüşme', 'Saha ziyareti'];
 }
 
 function interaction_results(): array
 {
-    return ['Olumlu', 'Olumsuz', 'Tekrar aranacak', 'Teklif istiyor', 'Demo istiyor', 'UlaÅŸÄ±lamadÄ±', 'KararsÄ±z'];
+    return ['Olumlu', 'Olumsuz', 'Tekrar aranacak', 'Teklif istiyor', 'Demo istiyor', 'Ulaşılamadı', 'Kararsız'];
 }
 
 function opportunity_stages(): array
 {
-    return ['Yeni fÄ±rsat', 'GÃ¶rÃ¼ÅŸme yapÄ±lÄ±yor', 'Teklif verildi', 'SÃ¶zleÅŸme bekleniyor', 'KazanÄ±ldÄ±', 'Kaybedildi'];
+    return ['Yeni fırsat', 'Görüşme yapılıyor', 'Teklif verildi', 'Sözleşme bekleniyor', 'Kazanıldı', 'Kaybedildi'];
 }
 
 function task_statuses(): array
 {
-    return ['AÃ§Ä±k', 'TamamlandÄ±'];
+    return ['Açık', 'Tamamlandı'];
 }
 
 function can_manage_users(): bool
@@ -633,7 +621,7 @@ function require_company_access(int $companyId): void
 {
     if (!user_can_access_company($companyId)) {
         http_response_code(403);
-        exit('Bu kayda eriÅŸim yetkiniz yok.');
+        exit('Bu kayda erişim yetkiniz yok.');
     }
 }
 

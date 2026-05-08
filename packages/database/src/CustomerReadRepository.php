@@ -10,12 +10,28 @@ final class CustomerReadRepository
 
     public function findActiveCustomers(int $limit = 100, ?int $customerTypeId = null): array
     {
+        return $this->findActiveCustomersPage($limit, 0, $customerTypeId);
+    }
+
+    public function findActiveCustomersPage(int $limit = 100, int $offset = 0, ?int $customerTypeId = null, string $query = ''): array
+    {
         $limit = max(1, min($limit, 500));
+        $offset = max(0, $offset);
         $customerTypeId = $customerTypeId !== null ? max(1, $customerTypeId) : null;
         $typeWhere = $customerTypeId !== null ? " AND c.CustomerTypeId = {$customerTypeId}" : '';
+        $params = [];
+        $searchWhere = '';
+        $query = trim($query);
+        if ($query !== '') {
+            $searchWhere = ' AND (c.Name1 LIKE :query_name OR c.Name2 LIKE :query_contact OR c.Code LIKE :query_code OR c.TaxNumber LIKE :query_tax)';
+            $params[':query_name'] = '%' . $query . '%';
+            $params[':query_contact'] = '%' . $query . '%';
+            $params[':query_code'] = '%' . $query . '%';
+            $params[':query_tax'] = '%' . $query . '%';
+        }
 
         return $this->safeFetchAll("
-            SELECT TOP ($limit)
+            SELECT
                 c.Id,
                 c.CustomerTypeId,
                 c.MainCustomerId,
@@ -36,20 +52,31 @@ final class CustomerReadRepository
                 c.Code,
                 c.RepresentativeId
             FROM dbo.Customer c
-            WHERE ISNULL(c.isDeleted, 0) = 0{$typeWhere}
+            WHERE ISNULL(c.isDeleted, 0) = 0{$typeWhere}{$searchWhere}
             ORDER BY c.Id DESC
-        ");
+            OFFSET {$offset} ROWS FETCH NEXT {$limit} ROWS ONLY
+        ", $params);
     }
 
-    public function countActiveCustomers(?int $customerTypeId = null): int
+    public function countActiveCustomers(?int $customerTypeId = null, string $query = ''): int
     {
         $customerTypeId = $customerTypeId !== null ? max(1, $customerTypeId) : null;
         $typeWhere = $customerTypeId !== null ? " AND c.CustomerTypeId = {$customerTypeId}" : '';
+        $params = [];
+        $searchWhere = '';
+        $query = trim($query);
+        if ($query !== '') {
+            $searchWhere = ' AND (c.Name1 LIKE :query_name OR c.Name2 LIKE :query_contact OR c.Code LIKE :query_code OR c.TaxNumber LIKE :query_tax)';
+            $params[':query_name'] = '%' . $query . '%';
+            $params[':query_contact'] = '%' . $query . '%';
+            $params[':query_code'] = '%' . $query . '%';
+            $params[':query_tax'] = '%' . $query . '%';
+        }
         $row = $this->safeFetchOne("
             SELECT COUNT(*) AS total
             FROM dbo.Customer c
-            WHERE ISNULL(c.isDeleted, 0) = 0{$typeWhere}
-        ");
+            WHERE ISNULL(c.isDeleted, 0) = 0{$typeWhere}{$searchWhere}
+        ", $params);
 
         return (int) ($row['total'] ?? 0);
     }
