@@ -2,6 +2,8 @@
 
 final class CustomerReadRepository
 {
+    private ?string $lastError = null;
+
     public function __construct(private ReadOnlySqlServerConnection $connection)
     {
     }
@@ -91,11 +93,23 @@ final class CustomerReadRepository
         ", [':id' => $id]);
     }
 
+    public function lastError(): ?string
+    {
+        return $this->lastError;
+    }
+
+    public function clearLastError(): void
+    {
+        $this->lastError = null;
+    }
+
     private function safeFetchAll(string $sql, array $params = []): array
     {
         try {
+            $this->lastError = null;
             return $this->connection->fetchAll($sql, $params);
         } catch (Throwable $exception) {
+            $this->lastError = $exception->getMessage();
             error_log('[Bilnex CRM] SQL Server Customer read failed: ' . $exception->getMessage());
             return [];
         }
@@ -104,8 +118,10 @@ final class CustomerReadRepository
     private function safeFetchOne(string $sql, array $params = []): ?array
     {
         try {
+            $this->lastError = null;
             return $this->connection->fetchOne($sql, $params);
         } catch (Throwable $exception) {
+            $this->lastError = $exception->getMessage();
             error_log('[Bilnex CRM] SQL Server Customer read failed: ' . $exception->getMessage());
             return null;
         }
