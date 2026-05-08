@@ -189,6 +189,7 @@ function render_header(string $title): void
 {
     $user = current_user();
     $flash = flash();
+    $currentPage = preg_replace('/[^a-z0-9_-]/i', '', $_GET['page'] ?? 'dashboard') ?: 'dashboard';
     $openTaskCount = can_view_all()
         ? (int) scalar("SELECT COUNT(*) FROM tasks WHERE status = 'Açık'")
         : (int) scalar("SELECT COUNT(*) FROM tasks WHERE status = 'Açık' AND (assigned_to = :uid OR assigned_by = :uid)", [':uid' => $user['id']]);
@@ -212,7 +213,7 @@ function render_header(string $title): void
         <link rel="icon" href="<?= e(rtrim(app_config('base_url'), '/')) ?>/assets/brand/bilnex-logo.jpg">
         <link rel="stylesheet" href="<?= e(rtrim(app_config('base_url'), '/')) ?>/assets/app.css">
     </head>
-    <body>
+    <body class="page-<?= e($currentPage) ?>">
         <div class="app-shell">
             <aside class="sidebar">
                 <a class="brand" href="<?= e(app_url()) ?>">
@@ -1936,6 +1937,20 @@ if ($page === 'reports') {
     $closedCount = (int) scalar("SELECT COUNT(*) FROM opportunities o {$oppWhere} AND o.stage IN ('Kazanıldı', 'Kaybedildi')", $oppParams);
     $winRate = $closedCount > 0 ? round(($wonCount / $closedCount) * 100) . '%' : '0%';
     ?>
+    <section class="print-report-cover" aria-hidden="true">
+        <div class="print-brand">
+            <img src="<?= e(rtrim(app_config('base_url'), '/')) ?>/assets/brand/bilnex-logo.jpg" alt="">
+            <div>
+                <strong>Bilnex İş Ortakları CRM</strong>
+                <span>Performans ve satış raporu</span>
+            </div>
+        </div>
+        <div class="print-meta">
+            <span>Rapor dönemi</span>
+            <strong><?= e($periodLabel) ?></strong>
+            <small><?= e(date('d.m.Y H:i')) ?></small>
+        </div>
+    </section>
     <section class="report-hero panel">
         <div>
             <span class="eyebrow">Rapor dönemi</span>
