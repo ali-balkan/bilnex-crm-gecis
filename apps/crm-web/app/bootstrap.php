@@ -12,6 +12,9 @@ foreach ($databasePackagePaths as $databasePackage) {
     if (is_file($databasePackage . '/CustomerReadRepository.php')) {
         require_once $databasePackage . '/CustomerReadRepository.php';
     }
+    if (is_file($databasePackage . '/CustomerWriteRepository.php')) {
+        require_once $databasePackage . '/CustomerWriteRepository.php';
+    }
 }
 date_default_timezone_set($config['timezone']);
 
@@ -77,6 +80,17 @@ function bilnex_customer_reader(): CustomerReadRepository
     }
 
     $repository = new CustomerReadRepository(bilnex_sql_server());
+    return $repository;
+}
+
+function bilnex_customer_writer(): CustomerWriteRepository
+{
+    static $repository = null;
+    if ($repository instanceof CustomerWriteRepository) {
+        return $repository;
+    }
+
+    $repository = new CustomerWriteRepository(app_config('sql_server'));
     return $repository;
 }
 

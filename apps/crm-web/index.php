@@ -132,7 +132,7 @@ function render_header(string $title): void
     $flash = flash();
     $nav = [
         ['dashboard', 'Dashboard'],
-        ['companies', 'Bayi / Firma'],
+        ['companies', 'Cariler'],
         ['followups', 'Takip Listesi'],
         ['opportunities', 'Satış Fırsatları'],
         ['reports', 'Raporlar'],
@@ -177,7 +177,7 @@ function render_header(string $title): void
                         <h1><?= e($title) ?></h1>
                         <p><?= e(date('d.m.Y')) ?></p>
                     </div>
-                    <a class="btn" href="<?= e(app_url('company_form')) ?>">Yeni firma</a>
+                    <a class="btn" href="<?= e(app_url('company_form')) ?>">Yeni cari</a>
                 </header>
                 <?php if ($flash): ?>
                     <div class="alert alert-<?= e($flash['type']) ?>"><?= e($flash['message']) ?></div>
@@ -700,18 +700,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $data[':status'] = 'Yeni kayıt';
         }
         if ($data[':name'] === '') {
-            flash('Firma adı zorunludur.', 'danger');
+            flash('Cari adı zorunludur.', 'danger');
             redirect_to('company_form', $id > 0 ? ['id' => $id] : []);
+        }
+        if (company_source() === 'sqlserver' && $id === 0) {
+            try {
+                $created = bilnex_customer_writer()->createCustomer([
+                    'name' => $data[':name'],
+                    'customer_type_id' => company_account_type_sql_id($data[':account_type']) ?? 16,
+                    'contact_person' => $data[':contact_person'],
+                    'phone' => $data[':phone'],
+                    'email' => $data[':email'],
+                    'city' => $data[':city'],
+                    'district' => $data[':district'],
+                    'address' => $data[':address'],
+                    'tax_no' => $data[':tax_no'],
+                    'description' => $data[':description'],
+                ]);
+                flash('Cari SQL Server kaydına yazıldı. Cari kodu: ' . $created['code']);
+                redirect_to('companies', ['account_type' => $data[':account_type']]);
+            } catch (Throwable $exception) {
+                error_log('[Bilnex CRM] SQL Server Customer write failed: ' . $exception->getMessage());
+                flash('Cari SQL Server kaydına yazılamadı: ' . $exception->getMessage(), 'danger');
+                redirect_to('company_form');
+            }
         }
         if ($id > 0) {
             $data[':id'] = $id;
             db()->prepare('UPDATE companies SET name = :name, sql_customer_id = :sql_customer_id, account_type = :account_type, account_code = :account_code, contact_person = :contact_person, phone = :phone, email = :email, city = :city, district = :district, address = :address, tax_no = :tax_no, balance_amount = :balance_amount, balance_side = :balance_side, status = :status, source = :source, responsible_user_id = :responsible_user_id, next_followup_date = :next_followup_date, description = :description, updated_at = CURRENT_TIMESTAMP WHERE id = :id')->execute($data);
-            flash('Firma kartı güncellendi.');
+            flash('Cari kartı güncellendi.');
         } else {
             $data[':created_by'] = current_user()['id'];
             db()->prepare('INSERT INTO companies (name, sql_customer_id, account_type, account_code, contact_person, phone, email, city, district, address, tax_no, balance_amount, balance_side, status, source, responsible_user_id, next_followup_date, description, created_by) VALUES (:name, :sql_customer_id, :account_type, :account_code, :contact_person, :phone, :email, :city, :district, :address, :tax_no, :balance_amount, :balance_side, :status, :source, :responsible_user_id, :next_followup_date, :description, :created_by)')->execute($data);
             $id = (int) db()->lastInsertId();
-            flash('Firma kartı oluşturuldu.');
+            flash('Cari kartı oluşturuldu.');
         }
         redirect_to('company_view', ['id' => $id]);
     }
@@ -946,7 +968,7 @@ if ($page === 'dashboard') {
         echo '<section class="field-hero panel">';
         echo '<div><span class="eyebrow">Hızlı çalışma alanı</span><h2>Bugün odaklanman gereken işler</h2><p>Takiplerini, yeni firma girişini ve satış fırsatlarını tek ekrandan yönet.</p></div>';
         echo '<div class="quick-actions">';
-        echo '<a class="btn primary" href="' . e(app_url('company_form')) . '">Yeni firma</a>';
+        echo '<a class="btn primary" href="' . e(app_url('company_form')) . '">Yeni cari</a>';
         echo '<a class="btn" href="' . e(app_url('followups')) . '">İş listesi</a>';
         echo '<a class="btn" href="' . e(app_url('opportunity_form')) . '">Yeni fırsat</a>';
         echo '</div></section>';
@@ -1082,7 +1104,7 @@ if ($page === 'users') {
 }
 
 if ($page === 'companies') {
-    render_header('Bayi / Firma Kayıtları');
+    render_header('Cariler');
     $where = ' WHERE 1 = 1';
     $params = [];
     [$scopeSql, $scopeParams] = owned_company_condition('c');
@@ -1137,7 +1159,7 @@ if ($page === 'companies') {
     }
     ?>
     <?php if ($usingSqlServerCompanies): ?>
-        <div class="alert">Bayi/Firma listesi SQL Server dbo.Customer kaynağından sadece okuma modunda gösteriliyor.</div>
+        <div class="alert">Cari listesi SQL Server dbo.Customer kaynağından okunuyor. Yeni cari kayıtları SQL Server'a yazılır.</div>
         <?php if ($sqlCustomerReadError): ?>
             <div class="alert alert-danger">
                 SQL Server Customer kaynagi okunamadi. Coolify ortam degiskenlerinde BILNEX_SQL_SERVER, BILNEX_SQL_DATABASE, kullanici ve sifreyi kontrol edin.
@@ -1150,8 +1172,8 @@ if ($page === 'companies') {
     <form class="panel import-panel" method="post" action="<?= e(app_url('import_companies')) ?>" enctype="multipart/form-data">
         <?= csrf_field() ?>
         <div>
-            <h2>Excelden bayi yükle</h2>
-            <p class="muted">Başlıklar: Firma, Yetkili, Telefon, E-posta, İl, İlçe, Adres, Durum, Kaynak, Sorumlu, Sonraki takip, Açıklama. CSV veya XLSX yükleyebilirsiniz.</p>
+            <h2>Excelden cari yükle</h2>
+            <p class="muted">Başlıklar: Cari, Yetkili, Telefon, E-posta, İl, İlçe, Adres, Durum, Kaynak, Sorumlu, Sonraki takip, Açıklama. CSV veya XLSX yükleyebilirsiniz.</p>
         </div>
         <?php if (can_view_all()): ?>
             <label>Varsayılan sorumlu
@@ -1170,12 +1192,12 @@ if ($page === 'companies') {
     <section class="panel">
         <div class="section-title">
             <div>
-                <h2>Bayi / Firma listesi</h2>
+                <h2>Cari listesi</h2>
                 <p class="muted"><?= e($companyTotal) ?> kayıttan <?= e(count($companies)) ?> kayıt gösteriliyor.</p>
             </div>
         </div>
         <div class="table-wrap"><table class="companies-table">
-            <thead><tr><th>Cari kodu</th><th>Firma</th><th>Cari türü</th><th>Yetkili</th><th>Telefon</th><th>İl</th><th>Durum</th><th>Sorumlu</th><th>Sonraki takip</th><th>Aksiyon</th></tr></thead>
+            <thead><tr><th>Cari kodu</th><th>Cari</th><th>Cari türü</th><th>Yetkili</th><th>Telefon</th><th>İl</th><th>Durum</th><th>Sorumlu</th><th>Sonraki takip</th><th>Aksiyon</th></tr></thead>
             <tbody>
             <?php foreach ($companies as $row): ?>
                 <tr>
@@ -1218,12 +1240,12 @@ if ($page === 'company_form') {
         require_company_access($id);
         $company = rows('SELECT * FROM companies WHERE id = :id', [':id' => $id])[0] ?? null;
     }
-    render_header($company ? 'Firma Düzenle' : 'Yeni Firma');
+    render_header($company ? 'Cari Düzenle' : 'Yeni Cari');
     ?>
     <form class="panel form-grid" method="post" action="<?= e(app_url('save_company')) ?>">
         <?= csrf_field() ?>
         <input type="hidden" name="id" value="<?= e($company['id'] ?? 0) ?>">
-        <label>Firma adı <input name="name" value="<?= e($company['name'] ?? '') ?>" required></label>
+        <label>Cari adı <input name="name" value="<?= e($company['name'] ?? '') ?>" required></label>
         <label>SQL Customer Id <input name="sql_customer_id" inputmode="numeric" value="<?= e($company['sql_customer_id'] ?? '') ?>" placeholder="Bilnex Customer.Id"></label>
         <label>Cari türü
             <select name="account_type">
