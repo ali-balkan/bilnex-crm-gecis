@@ -31,8 +31,13 @@ if (session_status() === PHP_SESSION_NONE) {
 
 const ROLE_ADMIN = 'admin';
 const ROLE_MANAGER = 'yonetici';
-const ROLE_CHANNEL = 'bayi_kanal';
-const ROLE_SALES = 'satis';
+const ROLE_CHANNEL_MANAGER = 'bayi_kanal_yoneticisi';
+const ROLE_CHANNEL_SPECIALIST = 'bayi_kanal_uzmani';
+const ROLE_FIELD_SALES = 'saha_satis';
+const ROLE_CHANNEL = ROLE_CHANNEL_SPECIALIST;
+const ROLE_SALES = ROLE_FIELD_SALES;
+const ROLE_LEGACY_CHANNEL = 'bayi_kanal';
+const ROLE_LEGACY_SALES = 'satis';
 
 function app_config(?string $key = null)
 {
@@ -294,6 +299,9 @@ function init_db(): void
             ':role' => ROLE_ADMIN,
         ]);
     }
+
+    $pdo->exec("UPDATE users SET role = '" . ROLE_CHANNEL_SPECIALIST . "' WHERE role = '" . ROLE_LEGACY_CHANNEL . "'");
+    $pdo->exec("UPDATE users SET role = '" . ROLE_FIELD_SALES . "' WHERE role = '" . ROLE_LEGACY_SALES . "'");
 }
 
 function e($value): string
@@ -374,7 +382,13 @@ function require_login(): void
 
 function normalize_role(?string $role): string
 {
-    return strtolower(trim((string) $role));
+    $role = strtolower(trim((string) $role));
+    return [
+        ROLE_LEGACY_CHANNEL => ROLE_CHANNEL_SPECIALIST,
+        ROLE_LEGACY_SALES => ROLE_FIELD_SALES,
+        'bayi kanal uzmanı / yöneticisi' => ROLE_CHANNEL_SPECIALIST,
+        'satışçı / saha satış' => ROLE_FIELD_SALES,
+    ][$role] ?? $role;
 }
 
 function role_label(string $role): string
@@ -383,8 +397,9 @@ function role_label(string $role): string
     return [
         ROLE_ADMIN => 'Admin',
         ROLE_MANAGER => 'Yönetici',
-        ROLE_CHANNEL => 'Bayi Kanal Uzmanı / Yöneticisi',
-        ROLE_SALES => 'Satışçı / Saha Satış',
+        ROLE_CHANNEL_MANAGER => 'Bayi Kanal Yöneticisi',
+        ROLE_CHANNEL_SPECIALIST => 'Bayi Kanal Uzmanı',
+        ROLE_FIELD_SALES => 'Saha Satış',
     ][$role] ?? $role;
 }
 
@@ -393,8 +408,9 @@ function role_options(): array
     return [
         ROLE_ADMIN => 'Admin',
         ROLE_MANAGER => 'Yönetici',
-        ROLE_CHANNEL => 'Bayi Kanal Uzmanı / Yöneticisi',
-        ROLE_SALES => 'Satışçı / Saha Satış',
+        ROLE_CHANNEL_MANAGER => 'Bayi Kanal Yöneticisi',
+        ROLE_CHANNEL_SPECIALIST => 'Bayi Kanal Uzmanı',
+        ROLE_FIELD_SALES => 'Saha Satış',
     ];
 }
 
@@ -526,7 +542,79 @@ function can_manage_users(): bool
 function can_view_all(): bool
 {
     $role = normalize_role(current_user()['role'] ?? null);
-    return in_array($role, [ROLE_ADMIN, ROLE_MANAGER], true);
+    return in_array($role, [ROLE_ADMIN, ROLE_MANAGER, ROLE_CHANNEL_MANAGER], true);
+}
+
+function task_visible_roles_for_current_user(): ?array
+{
+    $role = normalize_role(current_user()['role'] ?? null);
+    if ($role === ROLE_ADMIN) {
+        return null;
+    }
+    if ($role === ROLE_MANAGER) {
+        return [ROLE_CHANNEL_MANAGER, ROLE_CHANNEL_SPECIALIST, ROLE_FIELD_SALES];
+    }
+    if ($role === ROLE_CHANNEL_MANAGER) {
+        return [ROLE_CHANNEL_SPECIALIST, ROLE_FIELD_SALES];
+    }
+    return [];
+}
+
+function role_database_values(array $roles): array
+{
+    $values = $roles;
+    if (in_array(ROLE_CHANNEL_SPECIALIST, $roles, true)) {
+        $values[] = ROLE_LEGACY_CHANNEL;
+    }
+    if (in_array(ROLE_FIELD_SALES, $roles, true)) {
+        $values[] = ROLE_LEGACY_SALES;
+    }
+    return array_values(array_unique($values));
+}
+
+function task_visibility_condition(string $alias = 't'): array
+{
+    $roles = task_visible_roles_for_current_user();
+    if ($roles === null) {
+        return ['', []];
+    }
+
+    $userId = (int) (current_user()['id'] ?? 0);
+    if ($userId <= 0) {
+        return [' AND 1 = 0', []];
+    }
+
+    $prefix = preg_replace('/[^A-Za-z0-9_]/', '', $alias) ?: 't';
+    $assignedByParam = ':task_scope_assigned_by_' . $prefix;
+    $assignedToParam = ':task_scope_assigned_to_' . $prefix;
+    $params = [
+        $assignedByParam => $userId,
+        $assignedToParam => $userId,
+    ];
+    $conditions = [
+        "{$alias}.assigned_by = {$assignedByParam}",
+        "{$alias}.assigned_to = {$assignedToParam}",
+    ];
+
+    $roleValues = role_database_values($roles);
+    if ($roleValues) {
+        $placeholders = [];
+        foreach ($roleValues as $index => $roleValue) {
+            $param = ':task_scope_role_' . $prefix . '_' . $index;
+            $placeholders[] = $param;
+            $params[$param] = $roleValue;
+        }
+        $conditions[] = "EXISTS (SELECT 1 FROM users task_scope_user WHERE task_scope_user.id IN ({$alias}.assigned_by, {$alias}.assigned_to) AND task_scope_user.role IN (" . implode(', ', $placeholders) . '))';
+    }
+
+    return [' AND (' . implode(' OR ', $conditions) . ')', $params];
+}
+
+function can_complete_task(array $task): bool
+{
+    $userId = (int) (current_user()['id'] ?? 0);
+    return normalize_role(current_user()['role'] ?? null) === ROLE_ADMIN
+        || (int) ($task['assigned_to'] ?? 0) === $userId;
 }
 
 function active_users(): array

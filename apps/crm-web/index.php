@@ -177,7 +177,7 @@ function nav_icon(string $target): string
         'dashboard' => '<path d="M3 13h8V3H3v10Zm0 8h8v-6H3v6Zm10 0h8V11h-8v10Zm0-18v6h8V3h-8Z"/>',
         'users' => '<path d="M16 11a4 4 0 1 0-3.3-6.3A5 5 0 0 1 16 11Zm-8 0a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 2c-3.3 0-6 1.7-6 3.8V20h12v-3.2C14 14.7 11.3 13 8 13Zm8 0c-.7 0-1.4.1-2 .3 1.2.9 2 2.1 2 3.5V20h6v-3.2c0-2.1-2.7-3.8-6-3.8Z"/>',
         'companies' => '<path d="M4 21V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v16H4Zm4-12h2V7H8v2Zm0 4h2v-2H8v2Zm0 4h2v-2H8v2Zm4-8h2V7h-2v2Zm0 4h2v-2h-2v2Zm0 4h2v-2h-2v2Zm7 4v-9h1a2 2 0 0 1 2 2v7h-3Z"/>',
-        'followups' => '<path d="M7 2h2v3h6V2h2v3h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2V2Zm12 8H5v9h14v-9Zm-9 6 6-6 1.4 1.4L10 18l-3.4-3.4L8 13.2l2 2Z"/>',
+        'followups' => '<path d="M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm3 4H6v2h2V8Zm2 0v2h8V8h-8Zm-2 5H6v2h2v-2Zm2 0v2h8v-2h-8Z"/>',
         'opportunities' => '<path d="M4 4h16v4H4V4Zm0 6h10v4H4v-4Zm0 6h16v4H4v-4Zm12-6h4v4h-4v-4Z"/>',
         'reports' => '<path d="M4 19h16v2H4v-2Zm2-2V9h3v8H6Zm5 0V3h3v14h-3Zm5 0v-6h3v6h-3Z"/>',
     ];
@@ -190,9 +190,8 @@ function render_header(string $title): void
     $user = current_user();
     $flash = flash();
     $currentPage = preg_replace('/[^a-z0-9_-]/i', '', $_GET['page'] ?? 'dashboard') ?: 'dashboard';
-    $openTaskCount = can_view_all()
-        ? (int) scalar("SELECT COUNT(*) FROM tasks WHERE status = 'Açık'")
-        : (int) scalar("SELECT COUNT(*) FROM tasks WHERE status = 'Açık' AND (assigned_to = :uid OR assigned_by = :uid)", [':uid' => $user['id']]);
+    [$openTaskScopeSql, $openTaskScopeParams] = task_visibility_condition('t');
+    $openTaskCount = (int) scalar("SELECT COUNT(*) FROM tasks t WHERE t.status = 'Açık'{$openTaskScopeSql}", $openTaskScopeParams);
     $nav = [
         ['dashboard', 'Dashboard'],
         ['companies', 'Cariler'],
@@ -585,7 +584,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         if ($title === '' || $validAssignee === 0) {
             flash('İş başlığı ve atanacak personel zorunludur.', 'danger');
-            redirect_to('task_form');
+            redirect_to('followups');
         }
         db()->prepare('INSERT INTO tasks (company_id, sql_customer_id, title, description, assigned_by, assigned_to, due_date, status) VALUES (:company_id, :sql_customer_id, :title, :description, :assigned_by, :assigned_to, :due_date, :status)')->execute([
             ':company_id' => $companyId,
@@ -608,7 +607,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             http_response_code(404);
             exit('İş bulunamadı.');
         }
-        if (!can_view_all() && (int) $task['assigned_to'] !== (int) current_user()['id']) {
+        if (!can_complete_task($task)) {
             http_response_code(403);
             exit('Bu işi tamamlama yetkiniz yok.');
         }
@@ -629,7 +628,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $data = [
             ':username' => trim($_POST['username'] ?? ''),
             ':full_name' => trim($_POST['full_name'] ?? ''),
-            ':role' => $_POST['role'] ?? ROLE_SALES,
+            ':role' => normalize_role($_POST['role'] ?? ROLE_SALES),
             ':active' => isset($_POST['active']) ? 1 : 0,
         ];
         if (!array_key_exists($data[':role'], role_options())) {
@@ -863,11 +862,13 @@ if ($page === 'dashboard') {
         $totalCompanyCount = company_source() === 'sqlserver'
             ? bilnex_customer_reader()->countActiveCustomers()
             : scalar('SELECT COUNT(*) FROM companies');
+        [$dashboardTaskScopeSql, $dashboardTaskScopeParams] = task_visibility_condition('t');
+        $dashboardOpenTaskCount = scalar("SELECT COUNT(*) FROM tasks t WHERE t.status = 'Açık'{$dashboardTaskScopeSql}", $dashboardTaskScopeParams);
         $cards = [
             ['Bugünkü görüşme', scalar('SELECT COUNT(*) FROM interactions WHERE date(interaction_date) = :today', [':today' => $today]), 'Günlük aktivite', ''],
             ['Bu haftaki görüşme', $weekCount, 'Geçen hafta: ' . $lastWeekCount, ''],
             ['Toplam bayi adayı', $totalCompanyCount, company_source() === 'sqlserver' ? 'SQL Customer kaynağı' : 'Tüm kayıtlar', ''],
-            ['Açık işler', scalar("SELECT COUNT(*) FROM tasks WHERE status = 'Açık'"), 'Atanan işler', 'danger-stat'],
+            ['Açık işler', $dashboardOpenTaskCount, 'Atanan işler', 'danger-stat'],
             ['Açık fırsat', scalar('SELECT COUNT(*) FROM opportunities WHERE stage NOT IN ("Kazanıldı", "Kaybedildi")'), money($openAmount), ''],
             ['Kazanılan satış', money($wonAmount), 'Kapanış oranı: ' . $conversionRate, 'success-stat'],
         ];
@@ -885,7 +886,7 @@ if ($page === 'dashboard') {
         }
         echo '</section>';
 
-        $dashboardTasks = rows("SELECT t.*, assigner.full_name assigned_by_name, assignee.full_name assigned_to_name FROM tasks t LEFT JOIN users assigner ON assigner.id = t.assigned_by LEFT JOIN users assignee ON assignee.id = t.assigned_to WHERE t.status = 'Açık' ORDER BY COALESCE(t.due_date, '9999-12-31'), t.created_at DESC LIMIT 10");
+        $dashboardTasks = rows("SELECT t.*, assigner.full_name assigned_by_name, assignee.full_name assigned_to_name FROM tasks t LEFT JOIN users assigner ON assigner.id = t.assigned_by LEFT JOIN users assignee ON assignee.id = t.assigned_to WHERE t.status = 'Açık'{$dashboardTaskScopeSql} ORDER BY COALESCE(t.due_date, '9999-12-31'), t.created_at DESC LIMIT 10", $dashboardTaskScopeParams);
         echo '<section class="panel"><div class="section-title"><h2>Takip edilecek işler</h2><a class="btn small" href="' . e(app_url('followups')) . '">İş listesi</a></div><div class="table-wrap"><table><thead><tr><th>İş</th><th>Atayan</th><th>Atanan</th><th>Termin</th></tr></thead><tbody>';
         foreach ($dashboardTasks as $task) {
             echo '<tr><td><strong>' . e($task['title']) . '</strong></td><td>' . e($task['assigned_by_name']) . '</td><td>' . e($task['assigned_to_name']) . '</td><td>' . e($task['due_date']) . '</td></tr>';
@@ -1069,7 +1070,7 @@ if ($page === 'users') {
             <label>Rol
                 <select name="role">
                     <?php foreach (role_options() as $value => $label): ?>
-                        <option value="<?= e($value) ?>"<?= selected($edit['role'] ?? ROLE_SALES, $value) ?>><?= e($label) ?></option>
+                        <option value="<?= e($value) ?>"<?= selected(normalize_role($edit['role'] ?? ROLE_SALES), $value) ?>><?= e($label) ?></option>
                     <?php endforeach; ?>
                 </select>
             </label>
@@ -1420,7 +1421,7 @@ if ($page === 'task_form') {
         <label class="wide">Açıklama <textarea name="description"></textarea></label>
         <div class="actions wide">
             <button class="btn primary" type="submit">İşi ata</button>
-            <a class="btn" href="<?= e(app_url('followups')) ?>">Takvime dön</a>
+            <a class="btn" href="<?= e(app_url('followups')) ?>">Takip listesine dön</a>
         </div>
     </form>
     <?php
@@ -1429,6 +1430,177 @@ if ($page === 'task_form') {
 }
 
 if ($page === 'followups') {
+    render_header('Takip Listesi');
+    $taskUsers = active_users();
+    $today = date('Y-m-d');
+    $currentUserId = (int) current_user()['id'];
+
+    $taskCompanyWhere = ' WHERE 1 = 1';
+    $taskCompanyParams = [];
+    [$taskCompanyScopeSql, $taskCompanyScopeParams] = owned_company_condition('c');
+    $taskCompanyWhere .= $taskCompanyScopeSql;
+    $taskCompanyParams += $taskCompanyScopeParams;
+    $taskCompanies = rows("SELECT c.id, c.name, c.account_code, c.account_type, c.sql_customer_id FROM companies c {$taskCompanyWhere} ORDER BY c.name LIMIT 300", $taskCompanyParams);
+
+    [$taskScopeSql, $taskScopeParams] = task_visibility_condition('t');
+    $scopeWhere = ' WHERE 1 = 1' . $taskScopeSql;
+    $openTaskTotal = (int) scalar("SELECT COUNT(*) FROM tasks t {$scopeWhere} AND t.status = 'Açık'", $taskScopeParams);
+    $assignedToMeTotal = (int) scalar("SELECT COUNT(*) FROM tasks t WHERE t.assigned_to = :uid AND t.status = 'Açık'", [':uid' => $currentUserId]);
+    $assignedByMeTotal = (int) scalar("SELECT COUNT(*) FROM tasks t WHERE t.assigned_by = :uid AND t.status = 'Açık'", [':uid' => $currentUserId]);
+    $overdueTaskParams = $taskScopeParams + [':today' => $today];
+    $overdueTaskTotal = (int) scalar("SELECT COUNT(*) FROM tasks t {$scopeWhere} AND t.status = 'Açık' AND t.due_date IS NOT NULL AND date(t.due_date) < :today", $overdueTaskParams);
+
+    ?>
+    <section class="task-command panel">
+        <div>
+            <span class="eyebrow">Takip ve iş atama</span>
+            <h2>İşleri tek listeden yönet</h2>
+            <p>Takip gir, işi bir personele ata ve atadığın iş üst yetkilide olsa bile sürecini buradan izle.</p>
+        </div>
+        <div class="task-stats">
+            <a href="<?= e(app_url('followups', ['status' => 'Açık'])) ?>"><strong><?= e($openTaskTotal) ?></strong><span>Açık iş</span></a>
+            <a href="<?= e(app_url('followups', ['status' => 'Açık'])) ?>"><strong><?= e($assignedToMeTotal) ?></strong><span>Bana atanan</span></a>
+            <a href="<?= e(app_url('followups', ['status' => 'Açık'])) ?>"><strong><?= e($assignedByMeTotal) ?></strong><span>Atadığım</span></a>
+            <a href="<?= e(app_url('followups', ['date_filter' => 'custom', 'date_to' => $today, 'status' => 'Açık'])) ?>"><strong><?= e($overdueTaskTotal) ?></strong><span>Geciken</span></a>
+        </div>
+    </section>
+
+    <section class="grid-two task-workspace">
+        <form class="panel form-grid task-create-panel" method="post" action="<?= e(app_url('save_task')) ?>">
+            <div class="wide section-title compact-title">
+                <h2>Takip gir / iş ata</h2>
+                <span class="muted">Herkes herkese iş atayabilir.</span>
+            </div>
+            <?= csrf_field() ?>
+            <label>İş konusu <input name="title" required placeholder="Örn. Bayi evraklarını kontrol et"></label>
+            <label>Atanacak kişi
+                <select name="assigned_to" required>
+                    <?php foreach ($taskUsers as $user): ?>
+                        <option value="<?= e($user['id']) ?>"<?= selected($currentUserId, $user['id']) ?>><?= e($user['full_name']) ?> · <?= e(role_label($user['role'])) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label>Termin tarihi <input type="date" name="due_date"></label>
+            <label>İlgili cari
+                <select name="company_id">
+                    <option value="">Bağlantı yok</option>
+                    <?php foreach ($taskCompanies as $company): ?>
+                        <option value="<?= e($company['id']) ?>"><?= e(company_lookup_label($company)) ?><?= $company['sql_customer_id'] ? ' · SQL #' . e($company['sql_customer_id']) : '' ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label class="wide">Açıklama <textarea name="description" placeholder="Beklenen aksiyon, not veya takip detayı"></textarea></label>
+            <div class="actions wide"><button class="btn primary" type="submit">Kaydet ve ata</button></div>
+        </form>
+
+        <article class="panel task-rules-panel">
+            <div class="section-title compact-title">
+                <h2>Görünürlük</h2>
+            </div>
+            <div class="role-flow">
+                <span>Admin</span>
+                <span>Yönetici</span>
+                <span>Bayi Kanal Yöneticisi</span>
+                <span>Bayi Kanal Uzmanı</span>
+                <span>Saha Satış</span>
+            </div>
+            <p class="muted">Bayi Kanal Uzmanı ve Saha Satış yalnızca kendilerine atanan veya kendilerinin atadığı işleri görür. Üst roller kendi kapsamındaki ekip işlerini de takip eder.</p>
+            <div class="legend-list">
+                <span><i class="legend-dot mine"></i>Bana atanan</span>
+                <span><i class="legend-dot delegated"></i>Atadığım iş</span>
+                <span><i class="legend-dot overdue-dot"></i>Geciken</span>
+            </div>
+        </article>
+    </section>
+
+    <?php
+        $listWhere = $scopeWhere;
+        $listParams = $taskScopeParams;
+        if (!empty($_GET['q'])) {
+            $listWhere .= ' AND (t.title LIKE :q OR t.description LIKE :q OR c.name LIKE :q OR assigner.full_name LIKE :q OR assignee.full_name LIKE :q)';
+            $listParams[':q'] = '%' . $_GET['q'] . '%';
+        }
+        if (!empty($_GET['status'])) {
+            $listWhere .= ' AND t.status = :status';
+            $listParams[':status'] = $_GET['status'];
+        }
+        apply_date_filter($listWhere, $listParams, 't.due_date', $_GET);
+        filter_bar('followups', [
+            'status' => ['_label' => 'Durum', 'items' => array_combine(task_statuses(), task_statuses())],
+        ]);
+        $items = rows("SELECT t.*, c.name company_name, c.account_code company_account_code, assigner.full_name assigned_by_name, assignee.full_name assigned_to_name, assigner.role assigned_by_role, assignee.role assigned_to_role FROM tasks t LEFT JOIN companies c ON c.id = t.company_id LEFT JOIN users assigner ON assigner.id = t.assigned_by LEFT JOIN users assignee ON assignee.id = t.assigned_to {$listWhere} ORDER BY CASE t.status WHEN 'Açık' THEN 0 ELSE 1 END, CASE WHEN t.due_date IS NOT NULL AND date(t.due_date) < :sort_today AND t.status = 'Açık' THEN 0 ELSE 1 END, COALESCE(t.due_date, '9999-12-31'), t.created_at DESC", $listParams + [':sort_today' => $today]);
+    ?>
+    <section class="panel task-list-panel">
+        <div class="section-title">
+            <h2>İş listesi</h2>
+            <span class="muted"><?= e($openTaskTotal) ?> açık iş · görünür kapsam</span>
+        </div>
+        <div class="task-list">
+            <?php foreach ($items as $row): ?>
+                <?php
+                    $isOpen = $row['status'] === 'Açık';
+                    $isOverdue = $isOpen && $row['due_date'] && strtotime((string) $row['due_date']) < strtotime($today);
+                    $isAssignedToMe = (int) $row['assigned_to'] === $currentUserId;
+                    $isAssignedByMe = (int) $row['assigned_by'] === $currentUserId && !$isAssignedToMe;
+                    $cardClasses = ['task-card'];
+                    if ($isAssignedToMe) {
+                        $cardClasses[] = 'assigned-to-me';
+                    }
+                    if ($isAssignedByMe) {
+                        $cardClasses[] = 'assigned-by-me';
+                    }
+                    if ($isOverdue) {
+                        $cardClasses[] = 'overdue-task';
+                    }
+                    if (!$isOpen) {
+                        $cardClasses[] = 'completed-task';
+                    }
+                    $contextLabel = $isAssignedToMe ? 'Bana atandı' : ($isAssignedByMe ? 'Atadığım iş' : 'Ekip işi');
+                ?>
+                <article class="<?= e(implode(' ', $cardClasses)) ?>">
+                    <div class="task-card-main">
+                        <div>
+                            <span class="task-context"><?= e($contextLabel) ?></span>
+                            <h3><?= e($row['title']) ?></h3>
+                            <?php if ($row['description']): ?><p><?= e($row['description']) ?></p><?php endif; ?>
+                        </div>
+                        <span class="badge <?= $row['status'] === 'Tamamlandı' ? 'success' : 'soft' ?>"><?= e($row['status']) ?></span>
+                    </div>
+                    <div class="task-meta">
+                        <span><strong>Atayan</strong><?= e($row['assigned_by_name'] ?? 'Silinmiş kullanıcı') ?><small><?= e(role_label($row['assigned_by_role'] ?? '')) ?></small></span>
+                        <span><strong>Atanan</strong><?= e($row['assigned_to_name'] ?? 'Silinmiş kullanıcı') ?><small><?= e(role_label($row['assigned_to_role'] ?? '')) ?></small></span>
+                        <span><strong>Termin</strong><?= e($row['due_date'] ?: '-') ?></span>
+                        <span><strong>Cari</strong><?= e($row['company_name'] ?? '-') ?><?php if (!empty($row['sql_customer_id'])): ?><small>SQL #<?= e($row['sql_customer_id']) ?></small><?php endif; ?></span>
+                    </div>
+                    <div class="task-card-actions">
+                        <?php if ($isOverdue): ?><span class="badge danger">Gecikmiş</span><?php endif; ?>
+                        <?php if ($row['status'] !== 'Tamamlandı' && can_complete_task($row)): ?>
+                            <form method="post" action="<?= e(app_url('complete_task')) ?>" class="inline-form task-complete-form">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="id" value="<?= e($row['id']) ?>">
+                                <input name="completion_note" placeholder="Tamamlama açıklaması" aria-label="Tamamlama açıklaması">
+                                <button class="btn small" type="submit">Tamamla</button>
+                            </form>
+                        <?php elseif ($row['status'] === 'Tamamlandı'): ?>
+                            <span class="muted">Tamamlandı: <?= e($row['completed_at'] ?: '-') ?></span>
+                            <?php if (!empty($row['completion_note'])): ?><small><?= e($row['completion_note']) ?></small><?php endif; ?>
+                        <?php else: ?>
+                            <span class="muted">Tamamlama yetkisi atanan kişide.</span>
+                        <?php endif; ?>
+                    </div>
+                </article>
+            <?php endforeach; ?>
+            <?php if (!$items): ?>
+                <p class="empty-state">Bu filtrelerle görünen iş kaydı yok.</p>
+            <?php endif; ?>
+        </div>
+    </section>
+    <?php
+    render_footer();
+    exit;
+}
+
+if ($page === 'followups_calendar_legacy') {
     render_header('Takip Listesi');
     $taskUsers = active_users();
     $taskCompanyWhere = ' WHERE 1 = 1';
