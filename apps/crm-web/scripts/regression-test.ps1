@@ -125,9 +125,9 @@ foreach ($asset in $assets) {
 
 $anonymous = New-Object Microsoft.PowerShell.Commands.WebRequestSession
 $anonDashboard = Get-Status "$base/index.php?page=dashboard" $anonymous
-Assert-True ($anonDashboard.Status -eq 302 -and $anonDashboard.Location -like "*page=login*") "anon dashboard login'e yönlenir"
+Assert-True ($anonDashboard.Status -eq 302 -and $anonDashboard.Location -like "*page=login*") "anon dashboard login'e yÃ¶nlenir"
 $badLogin = Post-And-Follow "$base/index.php?page=login" @{ csrf_token = (Extract-Token (Invoke-WebRequest -Uri "$base/index.php?page=login" -WebSession $anonymous -UseBasicParsing).Content); username = "bad"; password = "bad" } $anonymous
-Assert-True ($badLogin.Content -like "*alert-danger*") "hatalı login mesajı"
+Assert-True ($badLogin.Content -like "*alert-danger*") "hatalÄ± login mesajÄ±"
 
 $sessions = @{
     admin = Login "test_admin" "Test123!admin"
@@ -154,7 +154,7 @@ foreach ($page in $navPages) {
     Assert-True (($status.Status -eq 200 -or $status.Status -eq 302)) "admin nav/button $page"
 }
 $logoutStatus = Get-Status "$base/index.php?page=logout" $sessions.manager
-Assert-True ($logoutStatus.Status -eq 302) "logout link yönlenir"
+Assert-True ($logoutStatus.Status -eq 302) "logout link yÃ¶nlenir"
 
 $adminUsers = Invoke-WebRequest -Uri "$base/index.php?page=users" -WebSession $sessions.admin -UseBasicParsing
 $userToken = Extract-Token $adminUsers.Content
@@ -169,7 +169,7 @@ $createdUserPage = Post-And-Follow "$base/index.php?page=save_user" @{
     role = "satis"
     active = "on"
 } $sessions.admin
-Assert-True ($createdUserPage.Content -like "*$regUser*") "admin kullanıcı oluşturur"
+Assert-True ($createdUserPage.Content -like "*$regUser*") "admin kullanÄ±cÄ± oluÅŸturur"
 $dupToken = Extract-Token $createdUserPage.Content
 $dupPage = Post-And-Follow "$base/index.php?page=save_user" @{
     csrf_token = $dupToken
@@ -180,9 +180,9 @@ $dupPage = Post-And-Follow "$base/index.php?page=save_user" @{
     role = "satis"
     active = "on"
 } $sessions.admin
-Assert-True ($dupPage.Content -like "*alert-danger*") "duplicate kullanıcı engellenir"
+Assert-True ($dupPage.Content -like "*alert-danger*") "duplicate kullanÄ±cÄ± engellenir"
 $forbiddenCreate = Get-Status "$base/index.php?page=save_user" $sessions.sales
-Assert-True ($forbiddenCreate.Status -eq 403 -or $forbiddenCreate.Status -eq 404) "non-admin kullanıcı POST endpointi GET ile işlem yapmaz"
+Assert-True ($forbiddenCreate.Status -eq 403 -or $forbiddenCreate.Status -eq 404) "non-admin kullanÄ±cÄ± POST endpointi GET ile iÅŸlem yapmaz"
 
 $salesCompanyForm = Invoke-WebRequest -Uri "$base/index.php?page=company_form" -WebSession $sessions.sales -UseBasicParsing
 $companyToken = Extract-Token $salesCompanyForm.Content
@@ -191,43 +191,43 @@ $companyPage = Post-And-Follow "$base/index.php?page=save_company" @{
     csrf_token = $companyToken
     id = 0
     name = $companyName
-    account_type = "Son Kullanıcı"
+    account_type = "Son KullanÄ±cÄ±"
     contact_person = "Regression Yetkili"
     phone = "05551112233"
     email = "regression@example.test"
-    city = "İstanbul"
-    district = "Kadıköy"
+    city = "Ä°stanbul"
+    district = "KadÄ±kÃ¶y"
     address = "Regression adres"
-    status = "Yeni kayıt"
+    status = "Yeni kayÄ±t"
     source = "Regression test"
     next_followup_date = (Get-Date).AddDays(1).ToString("yyyy-MM-dd")
-    description = "Regression açıklama"
+    description = "Regression aÃ§Ä±klama"
 } $sessions.sales
 $companyId = [regex]::Match($companyPage.BaseResponse.ResponseUri.AbsoluteUri, 'id=(\d+)').Groups[1].Value
-Assert-True ($companyId -and $companyPage.Content -like "*$companyName*") "satışçı firma oluşturur"
+Assert-True ($companyId -and $companyPage.Content -like "*$companyName*") "satÄ±ÅŸÃ§Ä± firma oluÅŸturur"
 
 $editToken = Extract-Token (Invoke-WebRequest -Uri "$base/index.php?page=company_form&id=$companyId" -WebSession $sessions.sales -UseBasicParsing).Content
-$updatedCompanyName = "$companyName Güncel"
+$updatedCompanyName = "$companyName GÃ¼ncel"
 $updatedCompany = Post-And-Follow "$base/index.php?page=save_company" @{
     csrf_token = $editToken
     id = $companyId
     name = $updatedCompanyName
-    account_type = "İş Ortağı"
+    account_type = "Ä°ÅŸ OrtaÄŸÄ±"
     contact_person = "Regression Yetkili 2"
     phone = "05554445566"
     email = "regression2@example.test"
     city = "Ankara"
-    district = "Çankaya"
+    district = "Ã‡ankaya"
     address = "Regression adres 2"
     status = "Takipte"
     source = "Regression test"
     next_followup_date = (Get-Date).AddDays(3).ToString("yyyy-MM-dd")
-    description = "Regression açıklama güncel"
+    description = "Regression aÃ§Ä±klama gÃ¼ncel"
 } $sessions.sales
-Assert-True ($updatedCompany.Content -like "*$updatedCompanyName*") "firma düzenlenir"
+Assert-True ($updatedCompany.Content -like "*$updatedCompanyName*") "firma dÃ¼zenlenir"
 
 $interactionToken = Extract-Token $updatedCompany.Content
-$interactionNote = "Regression görüşme $stamp"
+$interactionNote = "Regression gÃ¶rÃ¼ÅŸme $stamp"
 $afterInteraction = Post-And-Follow "$base/index.php?page=save_interaction" @{
     csrf_token = $interactionToken
     company_id = $companyId
@@ -237,7 +237,7 @@ $afterInteraction = Post-And-Follow "$base/index.php?page=save_interaction" @{
     next_followup_date = (Get-Date).AddDays(4).ToString("yyyy-MM-dd")
     note = $interactionNote
 } $sessions.sales
-Assert-True ($afterInteraction.Content -like "*$interactionNote*") "görüşme notu eklenir"
+Assert-True ($afterInteraction.Content -like "*$interactionNote*") "gÃ¶rÃ¼ÅŸme notu eklenir"
 
 $oppForm = Invoke-WebRequest -Uri "$base/index.php?page=opportunity_form&company_id=$companyId" -WebSession $sessions.sales -UseBasicParsing
 $oppToken = Extract-Token $oppForm.Content
@@ -250,12 +250,12 @@ Post-And-Follow "$base/index.php?page=save_opportunity" @{
     estimated_amount = "34567,89"
     stage = "Teklif verildi"
     expected_close_date = (Get-Date).AddDays(12).ToString("yyyy-MM-dd")
-    note = "Regression fırsat"
+    note = "Regression fÄ±rsat"
 } $sessions.sales | Out-Null
 $oppList = Invoke-WebRequest -Uri "$base/index.php?page=opportunities&q=$([System.Net.WebUtility]::UrlEncode($product))" -WebSession $sessions.sales -UseBasicParsing
-Assert-True ($oppList.Content -like "*$product*") "satış fırsatı oluşturulur ve aranır"
+Assert-True ($oppList.Content -like "*$product*") "satÄ±ÅŸ fÄ±rsatÄ± oluÅŸturulur ve aranÄ±r"
 $oppId = [regex]::Match($oppList.Content, 'opportunity_form(?:&amp;|&)id=(\d+)').Groups[1].Value
-Assert-True ($oppId) "fırsat düzenle linki var"
+Assert-True ($oppId) "fÄ±rsat dÃ¼zenle linki var"
 $oppEditForm = Invoke-WebRequest -Uri "$base/index.php?page=opportunity_form&id=$oppId" -WebSession $sessions.sales -UseBasicParsing
 $oppEditToken = Extract-Token $oppEditForm.Content
 $productUpdated = "$product Guncel"
@@ -265,17 +265,17 @@ Post-And-Follow "$base/index.php?page=save_opportunity" @{
     company_id = $companyId
     product_service = $productUpdated
     estimated_amount = "45678"
-    stage = "Kazanıldı"
+    stage = "KazanÄ±ldÄ±"
     expected_close_date = (Get-Date).AddDays(15).ToString("yyyy-MM-dd")
-    note = "Regression fırsat güncel"
+    note = "Regression fÄ±rsat gÃ¼ncel"
 } $sessions.sales | Out-Null
 $oppUpdated = Invoke-WebRequest -Uri "$base/index.php?page=opportunities&q=$([System.Net.WebUtility]::UrlEncode($productUpdated))" -WebSession $sessions.sales -UseBasicParsing
-Assert-True ($oppUpdated.Content -like "*$productUpdated*") "satış fırsatı düzenlenir"
+Assert-True ($oppUpdated.Content -like "*$productUpdated*") "satÄ±ÅŸ fÄ±rsatÄ± dÃ¼zenlenir"
 
 $filterUrls = @(
     "$base/index.php?page=companies&q=Regression&status=Takipte&date_filter=month",
     "$base/index.php?page=followups&q=Regression&status=Takipte&date_filter=week",
-    "$base/index.php?page=opportunities&q=Regression&stage=Kazanıldı&date_filter=custom&date_from=$((Get-Date).ToString('yyyy-MM-dd'))&date_to=$((Get-Date).AddDays(30).ToString('yyyy-MM-dd'))",
+    "$base/index.php?page=opportunities&q=Regression&stage=KazanÄ±ldÄ±&date_filter=custom&date_from=$((Get-Date).ToString('yyyy-MM-dd'))&date_to=$((Get-Date).AddDays(30).ToString('yyyy-MM-dd'))",
     "$base/index.php?page=reports&date_filter=month"
 )
 foreach ($url in $filterUrls) {
@@ -284,18 +284,18 @@ foreach ($url in $filterUrls) {
 }
 
 $missingCsrf = Get-Status "$base/index.php?page=save_company" $sessions.sales
-Assert-True ($missingCsrf.Status -eq 404) "GET save_company işlem yapmaz"
+Assert-True ($missingCsrf.Status -eq 404) "GET save_company iÅŸlem yapmaz"
 $badCsrf = Post-And-Follow "$base/index.php?page=save_company" @{ csrf_token = "bad"; id = 0; name = "CSRF Bad" } $sessions.sales
-Assert-True ($badCsrf.Content -like "*Oturum doğrulama*" -or $badCsrf.Content -like "*Oturum do*") "bad CSRF reddedilir"
+Assert-True ($badCsrf.Content -like "*Oturum doÄŸrulama*" -or $badCsrf.Content -like "*Oturum do*") "bad CSRF reddedilir"
 
 $channelCompanies = Invoke-WebRequest -Uri "$base/index.php?page=companies" -WebSession $sessions.channel -UseBasicParsing
 $channelCompanyId = [regex]::Match($channelCompanies.Content, 'company_view(?:&amp;|&)id=(\d+)').Groups[1].Value
 $salesForeignCompany = Get-Status "$base/index.php?page=company_view&id=$channelCompanyId" $sessions.sales
-Assert-True ($salesForeignCompany.Status -eq 200) "sales ortak firma kartÄ±nÄ± gÃ¶rÃ¼r"
+Assert-True ($salesForeignCompany.Status -eq 403) "sales baska personelin firma kartini goremez"
 
 $channelOpps = Invoke-WebRequest -Uri "$base/index.php?page=opportunities" -WebSession $sessions.channel -UseBasicParsing
 $foreignOppId = [regex]::Match($channelOpps.Content, 'opportunity_form(?:&amp;|&)id=(\d+)').Groups[1].Value
-Assert-True ($foreignOppId) "foreign fırsat linki okunur"
+Assert-True ($foreignOppId) "foreign fÄ±rsat linki okunur"
 $ownCompanyId = $companyId
 $hijackForm = Invoke-WebRequest -Uri "$base/index.php?page=opportunity_form&id=$oppId" -WebSession $sessions.sales -UseBasicParsing
 $hijackToken = Extract-Token $hijackForm.Content
@@ -311,7 +311,7 @@ $hijack = Post-And-Follow "$base/index.php?page=save_opportunity" @{
     note = "must fail"
 } $sessions.sales
 $afterHijack = Php "require 'app/bootstrap.php'; echo db()->query('SELECT company_id FROM opportunities WHERE id = $foreignOppId')->fetchColumn();"
-Assert-True ($beforeHijack -eq $afterHijack) "sales başka fırsatı id değiştirerek güncelleyemez"
+Assert-True ($beforeHijack -eq $afterHijack) "sales baÅŸka fÄ±rsatÄ± id deÄŸiÅŸtirerek gÃ¼ncelleyemez"
 
 Cleanup-RegressionData
-Write-Host "Regression test tamamlandı."
+Write-Host "Regression test tamamlandÄ±."
