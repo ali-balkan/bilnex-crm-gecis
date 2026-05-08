@@ -832,6 +832,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect_to('company_view', ['id' => $id]);
     }
 
+    if ($page === 'save_sql_company') {
+        if (company_source() !== 'sqlserver') {
+            flash('SQL Server cari kaynağı aktif değil.', 'danger');
+            redirect_to('companies');
+        }
+
+        $sqlCustomerId = (int) ($_POST['sql_customer_id'] ?? 0);
+        $name = trim((string) ($_POST['name'] ?? ''));
+        $submittedAccountType = trim((string) ($_POST['account_type'] ?? ''));
+        $accountType = normalize_company_account_type($submittedAccountType !== '' ? $submittedAccountType : 'Hedef Bayi');
+        if ($sqlCustomerId <= 0 || $name === '') {
+            flash('Cari adı zorunludur.', 'danger');
+            redirect_to('sql_company_form', $sqlCustomerId > 0 ? ['id' => $sqlCustomerId] : []);
+        }
+
+        try {
+            bilnex_customer_writer()->updateCustomer($sqlCustomerId, [
+                'name' => $name,
+                'customer_type_id' => company_account_type_sql_id($accountType) ?? 14,
+                'contact_person' => trim((string) ($_POST['contact_person'] ?? '')),
+                'phone' => trim((string) ($_POST['phone'] ?? '')),
+                'email' => trim((string) ($_POST['email'] ?? '')),
+                'city' => trim((string) ($_POST['city'] ?? '')),
+                'district' => trim((string) ($_POST['district'] ?? '')),
+                'address' => trim((string) ($_POST['address'] ?? '')),
+                'tax_no' => trim((string) ($_POST['tax_no'] ?? '')),
+                'description' => trim((string) ($_POST['description'] ?? '')),
+            ]);
+            ensure_local_company_for_sql_customer($sqlCustomerId, (int) current_user()['id']);
+            flash('SQL cari kaydı güncellendi.');
+            redirect_to('companies', ['q' => $name]);
+        } catch (Throwable $exception) {
+            error_log('[Bilnex CRM] SQL Server Customer update failed: ' . $exception->getMessage());
+            flash('SQL cari kaydı güncellenemedi: ' . $exception->getMessage(), 'danger');
+            redirect_to('sql_company_form', ['id' => $sqlCustomerId]);
+        }
+    }
+
     if ($page === 'save_interaction') {
         $companyId = (int) ($_POST['company_id'] ?? 0);
         require_company_access($companyId);
@@ -1302,7 +1340,7 @@ if ($page === 'companies') {
             </form>
         </div>
         <div class="table-wrap companies-table-wrap"><table class="companies-table <?= $usingSqlServerCompanies ? 'companies-table-sql' : 'companies-table-local' ?>">
-            <thead><tr><th>Cari kodu</th><th>Cari</th><th>Cari türü</th><th>Yetkili</th><th>Telefon</th><th>İl</th><?php if (!$usingSqlServerCompanies): ?><th>Durum</th><th>Sorumlu</th><?php endif; ?></tr></thead>
+            <thead><tr><th>Cari kodu</th><th>Cari</th><th>Cari türü</th><th>Yetkili</th><th>Telefon</th><th>İl</th><?php if (!$usingSqlServerCompanies): ?><th>Durum</th><th>Sorumlu</th><?php endif; ?><th>Düzenle</th></tr></thead>
             <tbody>
             <?php foreach ($companies as $row): ?>
                 <tr<?= !$usingSqlServerCompanies ? ' data-href="' . e(app_url('company_view', ['id' => $row['id']])) . '"' : '' ?>>
@@ -1324,6 +1362,9 @@ if ($page === 'companies') {
                     </td>
                     <?php if (!$usingSqlServerCompanies): ?><td><span class="badge"><?= e($row['status']) ?></span></td><?php endif; ?>
                     <?php if (!$usingSqlServerCompanies): ?><td><?= e($row['responsible_name'] ?: '-') ?></td><?php endif; ?>
+                    <td class="actions-cell">
+                        <a class="btn small" href="<?= e($usingSqlServerCompanies ? app_url('sql_company_form', ['id' => $row['sql_customer_id'] ?: $row['id']]) : app_url('company_form', ['id' => $row['id']])) ?>">Düzenle</a>
+                    </td>
                 </tr>
             <?php endforeach; ?>
             </tbody>
@@ -1331,6 +1372,55 @@ if ($page === 'companies') {
         <?php render_pagination('companies', $pageNumber, $perPage, $companyTotal); ?>
     </section>
     <?php
+    render_footer();
+    exit;
+}
+
+if ($page === 'sql_company_form') {
+    if (company_source() !== 'sqlserver') {
+        redirect_to('companies');
+    }
+    $sqlCustomerId = (int) ($_GET['id'] ?? 0);
+    $rawCustomer = $sqlCustomerId > 0 ? bilnex_customer_reader()->findById($sqlCustomerId) : null;
+    $readError = bilnex_customer_reader()->lastError();
+    $company = $rawCustomer ? sql_customer_row_to_company_row($rawCustomer) : null;
+    render_header($company ? 'SQL Cari Düzenle' : 'SQL Cari Bulunamadı');
+    if (!$company): ?>
+        <div class="alert alert-danger">
+            SQL cari kaydı bulunamadı.
+            <?php if ($readError): ?><br><small><?= e($readError) ?></small><?php endif; ?>
+        </div>
+        <a class="btn" href="<?= e(app_url('companies')) ?>">Carilere dön</a>
+    <?php else:
+        $selectedAccountType = $company['account_type'] ?? 'Hedef Bayi';
+        ?>
+        <form class="panel form-grid" method="post" action="<?= e(app_url('save_sql_company')) ?>">
+            <?= csrf_field() ?>
+            <input type="hidden" name="sql_customer_id" value="<?= e($company['sql_customer_id']) ?>">
+            <label>SQL Customer Id <input class="readonly-input" value="<?= e($company['sql_customer_id']) ?>" readonly aria-readonly="true"></label>
+            <label>Cari kodu <input class="readonly-input" value="<?= e($company['account_code'] ?: '-') ?>" readonly aria-readonly="true"></label>
+            <label>Cari adı <input name="name" value="<?= e($company['name']) ?>" required></label>
+            <label>Cari türü
+                <select name="account_type">
+                    <?php foreach (company_account_types() as $type): ?>
+                        <option value="<?= e($type) ?>"<?= selected($selectedAccountType, $type) ?>><?= e($type) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label>Yetkili kişi <input name="contact_person" value="<?= e($company['contact_person']) ?>"></label>
+            <label>Vergi no <input name="tax_no" value="<?= e($company['tax_no']) ?>"></label>
+            <label>Telefon <input name="phone" value="<?= e($company['phone']) ?>"></label>
+            <label>E-posta <input type="email" name="email" value="<?= e($company['email']) ?>"></label>
+            <label>İl <input name="city" value="<?= e($company['city']) ?>"></label>
+            <label>İlçe <input name="district" value="<?= e($company['district']) ?>"></label>
+            <label class="wide">Adres <textarea name="address"><?= e($company['address']) ?></textarea></label>
+            <label class="wide">Açıklama <textarea name="description"><?= e($company['description'] ?? '') ?></textarea></label>
+            <div class="actions wide">
+                <a class="btn" href="<?= e(app_url('companies')) ?>">Vazgeç</a>
+                <button class="btn primary" type="submit">SQL kaydını güncelle</button>
+            </div>
+        </form>
+    <?php endif;
     render_footer();
     exit;
 }

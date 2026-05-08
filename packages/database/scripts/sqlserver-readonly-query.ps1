@@ -40,12 +40,18 @@ if (-not $username -or -not $password) {
 $connectionString = "Server=$server;Database=$database;User ID=$username;Password=$password;Encrypt=False;TrustServerCertificate=True;Connection Timeout=10;"
 $connection = [System.Data.SqlClient.SqlConnection]::new($connectionString)
 $command = $connection.CreateCommand()
-$command.CommandText = $query
 
 foreach ($key in $params.Keys) {
-    $parameter = $command.Parameters.AddWithValue($key, $params[$key])
+    $parameterName = [string]$key
+    if ($parameterName.StartsWith(":")) {
+        $sqlParameterName = "@" + $parameterName.Substring(1)
+        $query = $query -replace ([regex]::Escape($parameterName) + "\b"), $sqlParameterName
+        $parameterName = $sqlParameterName
+    }
+    $parameter = $command.Parameters.AddWithValue($parameterName, $params[$key])
     [void]$parameter
 }
+$command.CommandText = $query
 
 $rows = New-Object System.Collections.Generic.List[object]
 $connection.Open()

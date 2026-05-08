@@ -631,38 +631,42 @@ tr[data-href]:hover td { background: #f3f9fe; }
 }
 
 .companies-table-sql th:nth-child(1),
-.companies-table-sql td:nth-child(1) { width: 12%; }
+.companies-table-sql td:nth-child(1) { width: 11%; }
 .companies-table-sql th:nth-child(2),
-.companies-table-sql td:nth-child(2) { width: 38%; }
+.companies-table-sql td:nth-child(2) { width: 34%; }
 .companies-table-sql th:nth-child(3),
-.companies-table-sql td:nth-child(3) { width: 14%; }
+.companies-table-sql td:nth-child(3) { width: 13%; }
 .companies-table-sql th:nth-child(4),
-.companies-table-sql td:nth-child(4) { width: 14%; }
+.companies-table-sql td:nth-child(4) { width: 13%; }
 .companies-table-sql th:nth-child(5),
 .companies-table-sql td:nth-child(5) { width: 12%; }
 .companies-table-sql th:nth-child(6),
 .companies-table-sql td:nth-child(6) { width: 10%; }
+.companies-table-sql th:nth-child(7),
+.companies-table-sql td:nth-child(7) { width: 7%; }
 
 .companies-table-local {
-    min-width: 860px;
+    min-width: 920px;
 }
 
 .companies-table-local th:nth-child(1),
-.companies-table-local td:nth-child(1) { width: 10%; }
+.companies-table-local td:nth-child(1) { width: 9%; }
 .companies-table-local th:nth-child(2),
-.companies-table-local td:nth-child(2) { width: 28%; }
+.companies-table-local td:nth-child(2) { width: 27%; }
 .companies-table-local th:nth-child(3),
 .companies-table-local td:nth-child(3) { width: 11%; }
 .companies-table-local th:nth-child(4),
 .companies-table-local td:nth-child(4) { width: 12%; }
 .companies-table-local th:nth-child(5),
-.companies-table-local td:nth-child(5) { width: 12%; }
+.companies-table-local td:nth-child(5) { width: 11%; }
 .companies-table-local th:nth-child(6),
-.companies-table-local td:nth-child(6) { width: 10%; }
+.companies-table-local td:nth-child(6) { width: 9%; }
 .companies-table-local th:nth-child(7),
-.companies-table-local td:nth-child(7) { width: 9%; }
+.companies-table-local td:nth-child(7) { width: 8%; }
 .companies-table-local th:nth-child(8),
 .companies-table-local td:nth-child(8) { width: 8%; }
+.companies-table-local th:nth-child(9),
+.companies-table-local td:nth-child(9) { width: 5%; }
 
 .company-code-cell {
     color: #355172;
@@ -671,6 +675,10 @@ tr[data-href]:hover td { background: #f3f9fe; }
 
 .company-name-cell {
     overflow-wrap: anywhere;
+}
+
+.actions-cell {
+    text-align: right;
 }
 
 .company-name-cell a,

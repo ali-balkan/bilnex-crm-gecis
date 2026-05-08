@@ -79,6 +79,110 @@ final class CustomerWriteRepository
         }
     }
 
+    public function updateCustomer(int $id, array $data): void
+    {
+        if ($id <= 0) {
+            throw new InvalidArgumentException('Guncellenecek SQL Customer Id gecersiz.');
+        }
+
+        $pdo = $this->pdo();
+        $pdo->beginTransaction();
+
+        try {
+            $existsStmt = $pdo->prepare('SELECT COUNT(*) FROM dbo.Customer WHERE Id = :Id AND ISNULL(isDeleted, 0) = 0');
+            $existsStmt->execute([':Id' => $id]);
+            if ((int) $existsStmt->fetchColumn() < 1) {
+                throw new RuntimeException('SQL Customer kaydi bulunamadi veya silinmis.');
+            }
+
+            $cityCode = $this->resolveCityCode($pdo, (string) ($data['city'] ?? ''));
+            $districtCode = $this->resolveDistrictCode($pdo, $cityCode, (string) ($data['district'] ?? ''));
+            $customerTypeId = max(1, (int) ($data['customer_type_id'] ?? 16));
+            $taxType = $this->inferCustomerTaxType((string) ($data['name'] ?? ''), (string) ($data['tax_no'] ?? ''));
+
+            $stmt = $pdo->prepare('
+                UPDATE dbo.Customer
+                SET
+                    CustomerTypeId = :CustomerTypeId,
+                    CustomerTaxType = :CustomerTaxType,
+                    Name1 = :Name1,
+                    Name2 = :Name2,
+                    TaxNumber = :TaxNumber,
+                    Description = :Description
+                WHERE Id = :Id AND ISNULL(isDeleted, 0) = 0
+            ');
+            $stmt->execute([
+                ':CustomerTypeId' => $customerTypeId,
+                ':CustomerTaxType' => $taxType,
+                ':Name1' => $this->clip((string) ($data['name'] ?? ''), 100),
+                ':Name2' => $this->nullableClip((string) ($data['contact_person'] ?? ''), 100),
+                ':TaxNumber' => $this->nullableClip((string) ($data['tax_no'] ?? ''), 250),
+                ':Description' => $this->nullableClip((string) ($data['description'] ?? ''), 255),
+                ':Id' => $id,
+            ]);
+
+            $addressIdStmt = $pdo->prepare('
+                SELECT TOP 1 Id
+                FROM dbo.Address
+                WHERE CustomerId = :CustomerId AND ISNULL(isDeleted, 0) = 0
+                ORDER BY CASE WHEN ISNULL(isActive, 0) = 1 THEN 0 ELSE 1 END, Id
+            ');
+            $addressIdStmt->execute([':CustomerId' => $id]);
+            $addressId = (int) ($addressIdStmt->fetchColumn() ?: 0);
+
+            $addressData = [
+                ':Address1' => $this->nullableClip((string) ($data['address'] ?? ''), 100),
+                ':Country' => 'TR',
+                ':City' => $this->nullableClip($cityCode, 25),
+                ':Town' => $this->nullableClip($districtCode, 25),
+                ':Phone' => $this->nullableClip((string) ($data['phone'] ?? ''), 250),
+                ':EMail' => $this->nullableClip((string) ($data['email'] ?? ''), 250),
+            ];
+
+            if ($addressId > 0) {
+                $stmt = $pdo->prepare('
+                    UPDATE dbo.Address
+                    SET
+                        Address1 = :Address1,
+                        Country = :Country,
+                        City = :City,
+                        Town = :Town,
+                        Phone = :Phone,
+                        EMail = :EMail,
+                        isActive = 1,
+                        isDeleted = 0,
+                        DeletedDate = NULL
+                    WHERE Id = :AddressId
+                ');
+                $stmt->execute($addressData + [':AddressId' => $addressId]);
+            } else {
+                $stmt = $pdo->prepare('
+                    INSERT INTO dbo.Address
+                        (Guid, Address1, Address2, Country, City, Town, PostCode, Phone, EMail, Web, CustomerId, BranchName, CreatedDate, CreatedUserId, isActive, isDeleted, DeletedDate, isEInvoice)
+                    VALUES
+                        (CONVERT(uniqueidentifier, :Guid), :Address1, NULL, :Country, :City, :Town, NULL, :Phone, :EMail, NULL, :CustomerId, :BranchName, GETDATE(), :CreatedUserId, :isActive, :isDeleted, NULL, :isEInvoice)
+                ');
+                $stmt->execute($addressData + [
+                    ':Guid' => $this->newGuid(),
+                    ':CustomerId' => $id,
+                    ':BranchName' => 'Merkez',
+                    ':CreatedUserId' => -1,
+                    ':isActive' => 1,
+                    ':isDeleted' => 0,
+                    ':isEInvoice' => 0,
+                ]);
+            }
+
+            $pdo->commit();
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+
+            throw $exception;
+        }
+    }
+
     private function pdo(): PDO
     {
         if ($this->pdo instanceof PDO) {
