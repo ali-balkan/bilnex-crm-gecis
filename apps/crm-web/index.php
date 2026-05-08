@@ -571,14 +571,49 @@ if ($page === 'logout') {
 
 require_login();
 
+if ($page === 'sql_customer_search') {
+    header('Content-Type: application/json; charset=utf-8');
+    $query = trim((string) ($_GET['q'] ?? ''));
+    if (company_source() !== 'sqlserver') {
+        echo json_encode(['items' => [], 'error' => 'Cari kaynağı SQL Server değil.'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if (strlen($query) < 2) {
+        echo json_encode(['items' => [], 'error' => null], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    $items = array_map(static function (array $row): array {
+        return [
+            'id' => (int) ($row['sql_customer_id'] ?? $row['id']),
+            'label' => sql_customer_lookup_label($row),
+            'name' => (string) ($row['name'] ?? ''),
+            'code' => (string) ($row['account_code'] ?? ''),
+            'type' => (string) ($row['account_type'] ?? ''),
+        ];
+    }, sql_customer_rows_for_company_list(20, null, 0, $query));
+    $error = bilnex_customer_reader()->lastError();
+    echo json_encode(['items' => $items, 'error' => $error], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($page === 'save_task') {
         $assignedTo = (int) ($_POST['assigned_to'] ?? 0);
         $validAssignee = (int) scalar('SELECT COUNT(*) FROM users WHERE id = :id AND active = 1', [':id' => $assignedTo]);
         $title = trim($_POST['title'] ?? '');
         $companyId = (int) ($_POST['company_id'] ?? 0);
-        if ($companyId > 0) {
+        $sqlCustomerId = (int) ($_POST['sql_customer_id'] ?? 0);
+        if ($sqlCustomerId > 0 && company_source() === 'sqlserver') {
+            $syncedCompanyId = ensure_local_company_for_sql_customer($sqlCustomerId, (int) current_user()['id']);
+            if (!$syncedCompanyId) {
+                flash('SQL cari bulunamadı veya okunamadı. Lütfen cari aramasından tekrar seçin.', 'danger');
+                redirect_to('followups');
+            }
+            $companyId = $syncedCompanyId;
+        } elseif ($companyId > 0) {
             require_company_access($companyId);
+            $sqlCustomerId = company_sql_customer_id($companyId) ?? 0;
         } else {
             $companyId = null;
         }
@@ -588,7 +623,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         db()->prepare('INSERT INTO tasks (company_id, sql_customer_id, title, description, assigned_by, assigned_to, due_date, status) VALUES (:company_id, :sql_customer_id, :title, :description, :assigned_by, :assigned_to, :due_date, :status)')->execute([
             ':company_id' => $companyId,
-            ':sql_customer_id' => $companyId ? company_sql_customer_id($companyId) : null,
+            ':sql_customer_id' => $sqlCustomerId > 0 ? $sqlCustomerId : null,
             ':title' => $title,
             ':description' => trim($_POST['description'] ?? ''),
             ':assigned_by' => current_user()['id'],
@@ -1390,13 +1425,17 @@ if ($page === 'company_view') {
 if ($page === 'task_form') {
     render_header('İş Ata');
     $users = active_users();
-    $companyWhere = ' WHERE 1 = 1';
-    $companyParams = [];
-    if (!can_view_all()) {
-        $companyWhere .= ' AND (responsible_user_id = :uid OR created_by = :uid)';
-        $companyParams[':uid'] = current_user()['id'];
+    $usingSqlCustomerPicker = company_source() === 'sqlserver';
+    $taskCompanies = [];
+    if (!$usingSqlCustomerPicker) {
+        $companyWhere = ' WHERE 1 = 1';
+        $companyParams = [];
+        if (!can_view_all()) {
+            $companyWhere .= ' AND (responsible_user_id = :uid OR created_by = :uid)';
+            $companyParams[':uid'] = current_user()['id'];
+        }
+        $taskCompanies = rows("SELECT id, name, account_code, sql_customer_id FROM companies {$companyWhere} ORDER BY name LIMIT 500", $companyParams);
     }
-    $taskCompanies = rows("SELECT id, name, account_code, sql_customer_id FROM companies {$companyWhere} ORDER BY name LIMIT 500", $companyParams);
     ?>
     <form class="panel form-grid" method="post" action="<?= e(app_url('save_task')) ?>">
         <h2 class="wide">İş ata</h2>
@@ -1410,20 +1449,46 @@ if ($page === 'task_form') {
             </select>
         </label>
         <label>Termin tarihi <input type="date" name="due_date"></label>
-        <label>İlgili cari
-            <select name="company_id">
-                <option value="">Bağlantı yok</option>
-                <?php foreach ($taskCompanies as $company): ?>
-                    <option value="<?= e($company['id']) ?>"><?= e(company_lookup_label($company)) ?><?= $company['sql_customer_id'] ? ' · SQL #' . e($company['sql_customer_id']) : '' ?></option>
-                <?php endforeach; ?>
-            </select>
-        </label>
+        <?php if ($usingSqlCustomerPicker): ?>
+            <label class="wide">İlgili cari
+                <input type="hidden" name="company_id" value="">
+                <input type="hidden" name="sql_customer_id" data-sql-customer-id>
+                <div class="sql-customer-picker" data-sql-customer-picker>
+                    <button class="lookup-button" type="button" data-open-sql-customer-picker><span data-sql-customer-label>Cari seçmek için tıklayın</span></button>
+                    <button class="btn small" type="button" data-clear-sql-customer>Temizle</button>
+                </div>
+            </label>
+        <?php else: ?>
+            <label>İlgili cari
+                <select name="company_id">
+                    <option value="">Bağlantı yok</option>
+                    <?php foreach ($taskCompanies as $company): ?>
+                        <option value="<?= e($company['id']) ?>"><?= e(company_lookup_label($company)) ?><?= $company['sql_customer_id'] ? ' · SQL #' . e($company['sql_customer_id']) : '' ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+        <?php endif; ?>
         <label class="wide">Açıklama <textarea name="description"></textarea></label>
         <div class="actions wide">
             <button class="btn primary" type="submit">İşi ata</button>
             <a class="btn" href="<?= e(app_url('followups')) ?>">Takip listesine dön</a>
         </div>
     </form>
+    <?php if ($usingSqlCustomerPicker): ?>
+        <dialog class="modal sql-customer-dialog" id="sql-customer-dialog" data-search-url="<?= e(app_url('sql_customer_search')) ?>">
+            <div class="modal-head">
+                <h2>SQL cariden seç</h2>
+                <button class="btn small" type="button" data-close-dialog>Kapat</button>
+            </div>
+            <div class="modal-body sql-customer-search">
+                <div class="sql-search-row">
+                    <input type="search" data-sql-customer-query placeholder="Cari adı, kodu veya vergi no ara..." autocomplete="off">
+                    <button class="btn primary" type="button" data-sql-customer-search>Ara</button>
+                </div>
+                <div class="sql-customer-results" data-sql-customer-results>Arama için en az 2 karakter yazın.</div>
+            </div>
+        </dialog>
+    <?php endif; ?>
     <?php
     render_footer();
     exit;
@@ -1434,13 +1499,16 @@ if ($page === 'followups') {
     $taskUsers = active_users();
     $today = date('Y-m-d');
     $currentUserId = (int) current_user()['id'];
-
-    $taskCompanyWhere = ' WHERE 1 = 1';
-    $taskCompanyParams = [];
-    [$taskCompanyScopeSql, $taskCompanyScopeParams] = owned_company_condition('c');
-    $taskCompanyWhere .= $taskCompanyScopeSql;
-    $taskCompanyParams += $taskCompanyScopeParams;
-    $taskCompanies = rows("SELECT c.id, c.name, c.account_code, c.account_type, c.sql_customer_id FROM companies c {$taskCompanyWhere} ORDER BY c.name LIMIT 300", $taskCompanyParams);
+    $usingSqlCustomerPicker = company_source() === 'sqlserver';
+    $taskCompanies = [];
+    if (!$usingSqlCustomerPicker) {
+        $taskCompanyWhere = ' WHERE 1 = 1';
+        $taskCompanyParams = [];
+        [$taskCompanyScopeSql, $taskCompanyScopeParams] = owned_company_condition('c');
+        $taskCompanyWhere .= $taskCompanyScopeSql;
+        $taskCompanyParams += $taskCompanyScopeParams;
+        $taskCompanies = rows("SELECT c.id, c.name, c.account_code, c.account_type, c.sql_customer_id FROM companies c {$taskCompanyWhere} ORDER BY c.name LIMIT 300", $taskCompanyParams);
+    }
 
     [$taskScopeSql, $taskScopeParams] = task_visibility_condition('t');
     $scopeWhere = ' WHERE 1 = 1' . $taskScopeSql;
@@ -1481,14 +1549,25 @@ if ($page === 'followups') {
                 </select>
             </label>
             <label>Termin tarihi <input type="date" name="due_date"></label>
-            <label>İlgili cari
-                <select name="company_id">
-                    <option value="">Bağlantı yok</option>
-                    <?php foreach ($taskCompanies as $company): ?>
-                        <option value="<?= e($company['id']) ?>"><?= e(company_lookup_label($company)) ?><?= $company['sql_customer_id'] ? ' · SQL #' . e($company['sql_customer_id']) : '' ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </label>
+            <?php if ($usingSqlCustomerPicker): ?>
+                <label class="wide">İlgili cari
+                    <input type="hidden" name="company_id" value="">
+                    <input type="hidden" name="sql_customer_id" data-sql-customer-id>
+                    <div class="sql-customer-picker" data-sql-customer-picker>
+                        <button class="lookup-button" type="button" data-open-sql-customer-picker><span data-sql-customer-label>Cari seçmek için tıklayın</span></button>
+                        <button class="btn small" type="button" data-clear-sql-customer>Temizle</button>
+                    </div>
+                </label>
+            <?php else: ?>
+                <label>İlgili cari
+                    <select name="company_id">
+                        <option value="">Bağlantı yok</option>
+                        <?php foreach ($taskCompanies as $company): ?>
+                            <option value="<?= e($company['id']) ?>"><?= e(company_lookup_label($company)) ?><?= $company['sql_customer_id'] ? ' · SQL #' . e($company['sql_customer_id']) : '' ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+            <?php endif; ?>
             <label class="wide">Açıklama <textarea name="description" placeholder="Beklenen aksiyon, not veya takip detayı"></textarea></label>
             <div class="actions wide"><button class="btn primary" type="submit">Kaydet ve ata</button></div>
         </form>
@@ -1512,12 +1591,27 @@ if ($page === 'followups') {
             </div>
         </article>
     </section>
+    <?php if ($usingSqlCustomerPicker): ?>
+        <dialog class="modal sql-customer-dialog" id="sql-customer-dialog" data-search-url="<?= e(app_url('sql_customer_search')) ?>">
+            <div class="modal-head">
+                <h2>SQL cariden seç</h2>
+                <button class="btn small" type="button" data-close-dialog>Kapat</button>
+            </div>
+            <div class="modal-body sql-customer-search">
+                <div class="sql-search-row">
+                    <input type="search" data-sql-customer-query placeholder="Cari adı, kodu veya vergi no ara..." autocomplete="off">
+                    <button class="btn primary" type="button" data-sql-customer-search>Ara</button>
+                </div>
+                <div class="sql-customer-results" data-sql-customer-results>Arama için en az 2 karakter yazın.</div>
+            </div>
+        </dialog>
+    <?php endif; ?>
 
     <?php
         $listWhere = $scopeWhere;
         $listParams = $taskScopeParams;
         if (!empty($_GET['q'])) {
-            $listWhere .= ' AND (t.title LIKE :q OR t.description LIKE :q OR c.name LIKE :q OR assigner.full_name LIKE :q OR assignee.full_name LIKE :q)';
+            $listWhere .= ' AND (t.title LIKE :q OR t.description LIKE :q OR c.name LIKE :q OR CAST(t.sql_customer_id AS TEXT) LIKE :q OR assigner.full_name LIKE :q OR assignee.full_name LIKE :q)';
             $listParams[':q'] = '%' . $_GET['q'] . '%';
         }
         if (!empty($_GET['status'])) {
@@ -1556,6 +1650,7 @@ if ($page === 'followups') {
                         $cardClasses[] = 'completed-task';
                     }
                     $contextLabel = $isAssignedToMe ? 'Bana atandı' : ($isAssignedByMe ? 'Atadığım iş' : 'Ekip işi');
+                    $companyDisplay = $row['company_name'] ?: (!empty($row['sql_customer_id']) ? 'SQL Customer' : '-');
                 ?>
                 <article class="<?= e(implode(' ', $cardClasses)) ?>">
                     <div class="task-card-main">
@@ -1570,7 +1665,7 @@ if ($page === 'followups') {
                         <span><strong>Atayan</strong><?= e($row['assigned_by_name'] ?? 'Silinmiş kullanıcı') ?><small><?= e(role_label($row['assigned_by_role'] ?? '')) ?></small></span>
                         <span><strong>Atanan</strong><?= e($row['assigned_to_name'] ?? 'Silinmiş kullanıcı') ?><small><?= e(role_label($row['assigned_to_role'] ?? '')) ?></small></span>
                         <span><strong>Termin</strong><?= e($row['due_date'] ?: '-') ?></span>
-                        <span><strong>Cari</strong><?= e($row['company_name'] ?? '-') ?><?php if (!empty($row['sql_customer_id'])): ?><small>SQL #<?= e($row['sql_customer_id']) ?></small><?php endif; ?></span>
+                        <span><strong>Cari</strong><?= e($companyDisplay) ?><?php if (!empty($row['sql_customer_id'])): ?><small>SQL #<?= e($row['sql_customer_id']) ?></small><?php endif; ?></span>
                     </div>
                     <div class="task-card-actions">
                         <?php if ($isOverdue): ?><span class="badge danger">Gecikmiş</span><?php endif; ?>

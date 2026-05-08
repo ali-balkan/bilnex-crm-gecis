@@ -114,25 +114,84 @@ function sql_customer_rows_for_company_list(int $limit = 250, ?int $customerType
     $items = bilnex_customer_reader()->findActiveCustomersPage($limit, $offset, $customerTypeId, $query);
 
     return array_map(static function (array $row): array {
-        return [
-            'id' => (int) $row['Id'],
-            'account_code' => $row['Code'] ?? '',
-            'name' => $row['Name1'] ?? '',
-            'account_type' => sql_customer_type_label((int) ($row['CustomerTypeId'] ?? 0)),
-            'contact_person' => $row['Name2'] ?? '',
-            'phone' => '',
-            'email' => '',
-            'city' => '',
-            'district' => '',
-            'address' => '',
-            'status' => !empty($row['isActive']) ? 'Aktif' : 'Pasif',
-            'responsible_name' => '',
-            'next_followup_date' => '',
-            'source' => 'SQL Server Customer',
-            'created_at' => $row['CreatedDate'] ?? '',
-            'updated_at' => $row['CreatedDate'] ?? '',
-        ];
+        return sql_customer_row_to_company_row($row);
     }, $items);
+}
+
+function sql_customer_row_to_company_row(array $row): array
+{
+    return [
+        'id' => (int) $row['Id'],
+        'sql_customer_id' => (int) $row['Id'],
+        'account_code' => $row['Code'] ?? '',
+        'name' => $row['Name1'] ?? '',
+        'account_type' => sql_customer_type_label((int) ($row['CustomerTypeId'] ?? 0)),
+        'contact_person' => $row['Name2'] ?? '',
+        'phone' => '',
+        'email' => '',
+        'city' => '',
+        'district' => '',
+        'address' => '',
+        'tax_no' => $row['TaxNumber'] ?? '',
+        'status' => !empty($row['isActive']) ? 'Aktif' : 'Pasif',
+        'responsible_name' => '',
+        'next_followup_date' => '',
+        'source' => 'SQL Server Customer',
+        'created_at' => $row['CreatedDate'] ?? '',
+        'updated_at' => $row['CreatedDate'] ?? '',
+    ];
+}
+
+function sql_customer_lookup_label(array $row): string
+{
+    $code = trim((string) ($row['account_code'] ?? $row['Code'] ?? ''));
+    $name = trim((string) ($row['name'] ?? $row['Name1'] ?? ''));
+    $type = trim((string) ($row['account_type'] ?? ''));
+    $prefix = $code !== '' ? $code . ' - ' : '';
+    return 'SQL #' . (int) ($row['sql_customer_id'] ?? $row['id'] ?? $row['Id'] ?? 0) . ' | ' . $prefix . $name . ($type !== '' ? ' - ' . $type : '');
+}
+
+function ensure_local_company_for_sql_customer(int $sqlCustomerId, ?int $userId = null): ?int
+{
+    if ($sqlCustomerId <= 0) {
+        return null;
+    }
+
+    $rawCustomer = bilnex_customer_reader()->findById($sqlCustomerId);
+    if (!$rawCustomer) {
+        return null;
+    }
+
+    $customer = sql_customer_row_to_company_row($rawCustomer);
+    $name = trim((string) $customer['name']);
+    if ($name === '') {
+        $name = 'SQL Customer #' . $sqlCustomerId;
+    }
+
+    $existingId = (int) scalar('SELECT id FROM companies WHERE sql_customer_id = :sql_customer_id ORDER BY id LIMIT 1', [
+        ':sql_customer_id' => $sqlCustomerId,
+    ]);
+    $data = [
+        ':sql_customer_id' => $sqlCustomerId,
+        ':name' => $name,
+        ':account_type' => normalize_company_account_type($customer['account_type']),
+        ':account_code' => trim((string) $customer['account_code']),
+        ':contact_person' => trim((string) $customer['contact_person']),
+        ':tax_no' => trim((string) $customer['tax_no']),
+        ':status' => $customer['status'] === 'Pasif' ? 'Pasif' : 'Aktif',
+        ':source' => 'SQL Server Customer',
+        ':responsible_user_id' => $userId,
+    ];
+
+    if ($existingId > 0) {
+        $data[':id'] = $existingId;
+        db()->prepare('UPDATE companies SET name = :name, account_type = :account_type, account_code = :account_code, contact_person = :contact_person, tax_no = :tax_no, status = :status, source = :source, responsible_user_id = COALESCE(responsible_user_id, :responsible_user_id), updated_at = CURRENT_TIMESTAMP WHERE id = :id')->execute($data);
+        return $existingId;
+    }
+
+    $data[':created_by'] = $userId;
+    db()->prepare('INSERT INTO companies (sql_customer_id, name, account_type, account_code, contact_person, tax_no, status, source, responsible_user_id, created_by) VALUES (:sql_customer_id, :name, :account_type, :account_code, :contact_person, :tax_no, :status, :source, :responsible_user_id, :created_by)')->execute($data);
+    return (int) db()->lastInsertId();
 }
 
 function company_sql_customer_id(int $companyId): ?int

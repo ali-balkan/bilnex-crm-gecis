@@ -708,6 +708,84 @@ dialog.modal::backdrop {
 
 .modal-body { padding: 18px; }
 
+.sql-customer-picker {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+}
+
+.lookup-button {
+    width: 100%;
+    min-height: 42px;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+}
+
+.lookup-button:hover,
+.lookup-button:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(0, 132, 221, .12);
+    outline: 0;
+}
+
+.sql-customer-dialog {
+    width: min(680px, calc(100vw - 28px));
+}
+
+.sql-customer-search {
+    display: grid;
+    gap: 14px;
+}
+
+.sql-search-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+}
+
+.sql-customer-results {
+    display: grid;
+    gap: 8px;
+    max-height: 390px;
+    overflow: auto;
+}
+
+.sql-customer-result {
+    display: grid;
+    gap: 4px;
+    width: 100%;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+}
+
+.sql-customer-result:hover,
+.sql-customer-result:focus {
+    border-color: var(--primary);
+    background: #f4faff;
+    outline: 0;
+}
+
+.sql-customer-result strong,
+.sql-customer-result span {
+    overflow-wrap: anywhere;
+}
+
+.sql-customer-result span {
+    color: var(--muted);
+    font-size: 12px;
+}
+
 .print-report-cover {
     display: none;
 }
@@ -1301,7 +1379,7 @@ dialog.modal::backdrop {
     .topbar, .detail-head, .actions, .section-title, .report-hero, .field-hero { align-items: stretch; flex-direction: column; }
     .report-actions, .quick-actions { justify-content: stretch; }
     .report-actions .btn, .quick-actions .btn { width: 100%; }
-    .stats-grid, .grid-two, .form-grid, .filters, .import-panel, .dashboard-grid, .pipeline, .field-focus-grid, .analytics-split, .task-command, .task-stats, .task-meta { grid-template-columns: 1fr; }
+    .stats-grid, .grid-two, .form-grid, .filters, .import-panel, .dashboard-grid, .pipeline, .field-focus-grid, .analytics-split, .task-command, .task-stats, .task-meta, .sql-customer-picker, .sql-search-row { grid-template-columns: 1fr; }
     .wide-panel { grid-column: auto; }
     .meta { grid-template-columns: 1fr; }
     h1 { font-size: 23px; }
