@@ -65,18 +65,30 @@ final class ReadOnlySqlServerConnection
         $username = $this->config['username'] ?? '';
         $password = $this->config['password'] ?? '';
         $trustCertificate = !empty($this->config['trust_server_certificate']) ? 'yes' : 'no';
+        $loginTimeout = (int) ($this->config['login_timeout'] ?? 5);
+        $loginTimeout = max(1, min($loginTimeout, 30));
 
         $dsn = sprintf(
-            'sqlsrv:Server=%s;Database=%s;TrustServerCertificate=%s',
+            'sqlsrv:Server=%s;Database=%s;TrustServerCertificate=%s;LoginTimeout=%d',
             $server,
             $database,
-            $trustCertificate
+            $trustCertificate,
+            $loginTimeout
         );
 
-        $this->pdo = new PDO($dsn, $username, $password, [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-        ]);
+        try {
+            $this->pdo = new PDO($dsn, $username, $password, [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_TIMEOUT => $loginTimeout,
+            ]);
+        } catch (PDOException $exception) {
+            throw new RuntimeException(
+                'SQL Server baglantisi kurulamadi. BILNEX_SQL_SERVER, kullanici/sifre ve container network ayarlarini kontrol edin.',
+                0,
+                $exception
+            );
+        }
 
         return $this->pdo;
     }
