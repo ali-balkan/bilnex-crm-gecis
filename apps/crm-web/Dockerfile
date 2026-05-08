@@ -8,6 +8,7 @@ RUN apt-get update \
         ca-certificates \
         curl \
         gnupg \
+        libsqlite3-dev \
         unixodbc-dev \
         libzip-dev \
         unzip \
