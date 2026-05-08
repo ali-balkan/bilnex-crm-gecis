@@ -30,6 +30,7 @@ COPY . /var/www/html
 COPY apps/crm-web/docker/entrypoint.sh /usr/local/bin/bilnex-crm-entrypoint
 
 RUN chmod +x /usr/local/bin/bilnex-crm-entrypoint \
+    && mkdir -p /var/www/html/apps/crm-web/data \
     && chown -R www-data:www-data /var/www/html/apps/crm-web/data
 
 EXPOSE 80
