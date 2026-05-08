@@ -298,11 +298,11 @@ function render_footer(): void
     <?php
 }
 
-function filter_bar(string $target, array $extra = []): void
+function filter_bar(string $target, array $extra = [], bool $includeDate = true): void
 {
     $dateFilter = $_GET['date_filter'] ?? '';
     ?>
-    <form class="filters" method="get">
+    <form class="filters<?= $includeDate ? '' : ' compact-filters' ?>" method="get">
         <input type="hidden" name="page" value="<?= e($target) ?>">
         <input name="q" value="<?= e($_GET['q'] ?? '') ?>" placeholder="Ara...">
         <?php foreach ($extra as $name => $options): ?>
@@ -313,15 +313,17 @@ function filter_bar(string $target, array $extra = []): void
                 <?php endforeach; ?>
             </select>
         <?php endforeach; ?>
-        <select name="date_filter">
-            <option value="">Tüm tarihler</option>
-            <option value="today"<?= selected($dateFilter, 'today') ?>>Bugün</option>
-            <option value="week"<?= selected($dateFilter, 'week') ?>>Bu hafta</option>
-            <option value="month"<?= selected($dateFilter, 'month') ?>>Bu ay</option>
-            <option value="custom"<?= selected($dateFilter, 'custom') ?>>Özel aralık</option>
-        </select>
-        <input type="date" name="date_from" value="<?= e($_GET['date_from'] ?? '') ?>">
-        <input type="date" name="date_to" value="<?= e($_GET['date_to'] ?? '') ?>">
+        <?php if ($includeDate): ?>
+            <select name="date_filter">
+                <option value="">Tüm tarihler</option>
+                <option value="today"<?= selected($dateFilter, 'today') ?>>Bugün</option>
+                <option value="week"<?= selected($dateFilter, 'week') ?>>Bu hafta</option>
+                <option value="month"<?= selected($dateFilter, 'month') ?>>Bu ay</option>
+                <option value="custom"<?= selected($dateFilter, 'custom') ?>>Özel aralık</option>
+            </select>
+            <input type="date" name="date_from" value="<?= e($_GET['date_from'] ?? '') ?>">
+            <input type="date" name="date_to" value="<?= e($_GET['date_to'] ?? '') ?>">
+        <?php endif; ?>
         <button class="btn" type="submit">Filtrele</button>
     </form>
     <?php
@@ -1209,11 +1211,13 @@ if ($page === 'companies') {
         $where .= ' AND c.account_type = :account_type';
         $params[':account_type'] = normalize_company_account_type($_GET['account_type']);
     }
-    if (!empty($_GET['responsible_user_id']) && can_view_all()) {
+    if (!$usingSqlServerCompanies && !empty($_GET['responsible_user_id']) && can_view_all()) {
         $where .= ' AND c.responsible_user_id = :responsible_user_id';
         $params[':responsible_user_id'] = (int) $_GET['responsible_user_id'];
     }
-    apply_date_filter($where, $params, 'c.created_at', $_GET);
+    if (!$usingSqlServerCompanies) {
+        apply_date_filter($where, $params, 'c.created_at', $_GET);
+    }
     $users = active_users();
     $userOptions = [];
     foreach ($users as $u) {
@@ -1225,10 +1229,10 @@ if ($page === 'companies') {
     if (!$usingSqlServerCompanies) {
         $extras['status'] = ['_label' => 'Durum', 'items' => array_combine(company_statuses(), company_statuses())];
     }
-    if (can_view_all()) {
+    if (!$usingSqlServerCompanies && can_view_all()) {
         $extras['responsible_user_id'] = ['_label' => 'Sorumlu', 'items' => $userOptions];
     }
-    filter_bar('companies', $extras);
+    filter_bar('companies', $extras, !$usingSqlServerCompanies);
     $pageNumber = max(1, (int) ($_GET['p'] ?? 1));
     $perPage = (int) ($_GET['per_page'] ?? 100);
     if (!in_array($perPage, [50, 100, 250, 500], true)) {
@@ -1265,7 +1269,7 @@ if ($page === 'companies') {
             </div>
         <?php endif; ?>
     <?php endif; ?>
-    <section class="panel">
+    <section class="panel company-list-panel">
         <div class="section-title">
             <div>
                 <h2>Cari listesi</h2>
@@ -1284,33 +1288,29 @@ if ($page === 'companies') {
                 <button class="btn small" type="submit">Uygula</button>
             </form>
         </div>
-        <div class="table-wrap"><table class="companies-table">
-            <thead><tr><th>Cari kodu</th><th>Cari</th><th>Cari türü</th><th>Yetkili</th><th>Telefon</th><th>İl</th><?php if (!$usingSqlServerCompanies): ?><th>Durum</th><?php endif; ?><th>Sorumlu</th><th>Sonraki takip</th><th>Aksiyon</th></tr></thead>
+        <div class="table-wrap companies-table-wrap"><table class="companies-table <?= $usingSqlServerCompanies ? 'companies-table-sql' : 'companies-table-local' ?>">
+            <thead><tr><th>Cari kodu</th><th>Cari</th><th>Cari türü</th><th>Yetkili</th><th>Telefon</th><th>İl</th><?php if (!$usingSqlServerCompanies): ?><th>Durum</th><th>Sorumlu</th><?php endif; ?></tr></thead>
             <tbody>
             <?php foreach ($companies as $row): ?>
                 <tr<?= !$usingSqlServerCompanies ? ' data-href="' . e(app_url('company_view', ['id' => $row['id']])) . '"' : '' ?>>
-                    <td><?= e($row['account_code'] ?? '') ?></td>
-                    <td>
+                    <td class="company-code-cell"><?= e($row['account_code'] ?: '-') ?></td>
+                    <td class="company-name-cell">
                         <?php if ($usingSqlServerCompanies): ?>
-                            <?= e($row['name']) ?>
+                            <strong><?= e($row['name']) ?></strong>
                         <?php else: ?>
                             <a href="<?= e(app_url('company_view', ['id' => $row['id']])) ?>"><?= e($row['name']) ?></a>
                         <?php endif; ?>
+                        <?php if (!empty($row['tax_no'])): ?><small>Vergi no: <?= e($row['tax_no']) ?></small><?php endif; ?>
                     </td>
                     <td><span class="badge soft"><?= e($row['account_type'] ?? 'İş Ortağı') ?></span></td>
-                    <td><?= e($row['contact_person']) ?></td>
-                    <td><?php if ($row['phone']): ?><a href="tel:<?= e($row['phone']) ?>"><?= e($row['phone']) ?></a><?php endif; ?></td>
-                    <td><?= e($row['city']) ?></td>
-                    <?php if (!$usingSqlServerCompanies): ?><td><span class="badge"><?= e($row['status']) ?></span></td><?php endif; ?>
-                    <td><?= e($row['responsible_name']) ?></td>
-                    <td><?= e($row['next_followup_date']) ?></td>
-                    <td>
-                        <?php if ($usingSqlServerCompanies): ?>
-                            <span class="badge soft">Sadece okuma</span>
-                        <?php else: ?>
-                            <a class="btn small" href="<?= e(app_url('company_view', ['id' => $row['id']])) ?>">Görüşme ekle</a>
-                        <?php endif; ?>
+                    <td><?= e($row['contact_person'] ?: '-') ?></td>
+                    <td><?php if ($row['phone']): ?><a href="tel:<?= e($row['phone']) ?>"><?= e($row['phone']) ?></a><?php else: ?>-<?php endif; ?></td>
+                    <td class="location-cell">
+                        <span><?= e($row['city'] ?: '-') ?></span>
+                        <?php if (!empty($row['district'])): ?><small><?= e($row['district']) ?></small><?php endif; ?>
                     </td>
+                    <?php if (!$usingSqlServerCompanies): ?><td><span class="badge"><?= e($row['status']) ?></span></td><?php endif; ?>
+                    <?php if (!$usingSqlServerCompanies): ?><td><?= e($row['responsible_name'] ?: '-') ?></td><?php endif; ?>
                 </tr>
             <?php endforeach; ?>
             </tbody>

@@ -120,6 +120,11 @@ function sql_customer_rows_for_company_list(int $limit = 250, ?int $customerType
 
 function sql_customer_row_to_company_row(array $row): array
 {
+    $address = trim(implode(' ', array_filter([
+        trim((string) ($row['Address1'] ?? '')),
+        trim((string) ($row['Address2'] ?? '')),
+    ])));
+
     return [
         'id' => (int) $row['Id'],
         'sql_customer_id' => (int) $row['Id'],
@@ -127,11 +132,11 @@ function sql_customer_row_to_company_row(array $row): array
         'name' => $row['Name1'] ?? '',
         'account_type' => sql_customer_type_label((int) ($row['CustomerTypeId'] ?? 0)),
         'contact_person' => $row['Name2'] ?? '',
-        'phone' => '',
-        'email' => '',
-        'city' => '',
-        'district' => '',
-        'address' => '',
+        'phone' => $row['Phone'] ?? '',
+        'email' => $row['Email'] ?? '',
+        'city' => $row['City'] ?? '',
+        'district' => $row['District'] ?? '',
+        'address' => $address,
         'tax_no' => $row['TaxNumber'] ?? '',
         'status' => !empty($row['isActive']) ? 'Aktif' : 'Pasif',
         'responsible_name' => '',

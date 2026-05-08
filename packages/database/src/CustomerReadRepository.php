@@ -23,11 +23,17 @@ final class CustomerReadRepository
         $searchWhere = '';
         $query = trim($query);
         if ($query !== '') {
-            $searchWhere = ' AND (c.Name1 LIKE :query_name OR c.Name2 LIKE :query_contact OR c.Code LIKE :query_code OR c.TaxNumber LIKE :query_tax)';
+            $searchWhere = ' AND (c.Name1 LIKE :query_name OR c.Name2 LIKE :query_contact OR c.Code LIKE :query_code OR c.TaxNumber LIKE :query_tax OR addr.Phone LIKE :query_phone OR addr.EMail LIKE :query_email OR addr.CityName LIKE :query_city OR addr.CityCode LIKE :query_city_code OR addr.DistrictName LIKE :query_district OR addr.TownCode LIKE :query_town_code)';
             $params[':query_name'] = '%' . $query . '%';
             $params[':query_contact'] = '%' . $query . '%';
             $params[':query_code'] = '%' . $query . '%';
             $params[':query_tax'] = '%' . $query . '%';
+            $params[':query_phone'] = '%' . $query . '%';
+            $params[':query_email'] = '%' . $query . '%';
+            $params[':query_city'] = '%' . $query . '%';
+            $params[':query_city_code'] = '%' . $query . '%';
+            $params[':query_district'] = '%' . $query . '%';
+            $params[':query_town_code'] = '%' . $query . '%';
         }
 
         return $this->safeFetchAll("
@@ -50,8 +56,15 @@ final class CustomerReadRepository
                 c.RegionId,
                 c.CategoryId,
                 c.Code,
-                c.RepresentativeId
+                c.RepresentativeId,
+                addr.Phone,
+                addr.EMail AS Email,
+                COALESCE(addr.CityName, addr.CityCode) AS City,
+                COALESCE(addr.DistrictName, addr.TownCode) AS District,
+                addr.Address1,
+                addr.Address2
             FROM dbo.Customer c
+            {$this->addressApplySql()}
             WHERE ISNULL(c.isDeleted, 0) = 0{$typeWhere}{$searchWhere}
             ORDER BY c.Id DESC
             OFFSET {$offset} ROWS FETCH NEXT {$limit} ROWS ONLY
@@ -64,17 +77,26 @@ final class CustomerReadRepository
         $typeWhere = $customerTypeId !== null ? " AND c.CustomerTypeId = {$customerTypeId}" : '';
         $params = [];
         $searchWhere = '';
+        $addressApply = '';
         $query = trim($query);
         if ($query !== '') {
-            $searchWhere = ' AND (c.Name1 LIKE :query_name OR c.Name2 LIKE :query_contact OR c.Code LIKE :query_code OR c.TaxNumber LIKE :query_tax)';
+            $addressApply = $this->addressApplySql();
+            $searchWhere = ' AND (c.Name1 LIKE :query_name OR c.Name2 LIKE :query_contact OR c.Code LIKE :query_code OR c.TaxNumber LIKE :query_tax OR addr.Phone LIKE :query_phone OR addr.EMail LIKE :query_email OR addr.CityName LIKE :query_city OR addr.CityCode LIKE :query_city_code OR addr.DistrictName LIKE :query_district OR addr.TownCode LIKE :query_town_code)';
             $params[':query_name'] = '%' . $query . '%';
             $params[':query_contact'] = '%' . $query . '%';
             $params[':query_code'] = '%' . $query . '%';
             $params[':query_tax'] = '%' . $query . '%';
+            $params[':query_phone'] = '%' . $query . '%';
+            $params[':query_email'] = '%' . $query . '%';
+            $params[':query_city'] = '%' . $query . '%';
+            $params[':query_city_code'] = '%' . $query . '%';
+            $params[':query_district'] = '%' . $query . '%';
+            $params[':query_town_code'] = '%' . $query . '%';
         }
         $row = $this->safeFetchOne("
             SELECT COUNT(*) AS total
             FROM dbo.Customer c
+            {$addressApply}
             WHERE ISNULL(c.isDeleted, 0) = 0{$typeWhere}{$searchWhere}
         ", $params);
 
@@ -118,8 +140,15 @@ final class CustomerReadRepository
                 c.RegionId,
                 c.CategoryId,
                 c.Code,
-                c.RepresentativeId
+                c.RepresentativeId,
+                addr.Phone,
+                addr.EMail AS Email,
+                COALESCE(addr.CityName, addr.CityCode) AS City,
+                COALESCE(addr.DistrictName, addr.TownCode) AS District,
+                addr.Address1,
+                addr.Address2
             FROM dbo.Customer c
+            {$this->addressApplySql()}
             WHERE c.Id = :id AND ISNULL(c.isDeleted, 0) = 0
         ", [':id' => $id]);
     }
@@ -132,6 +161,28 @@ final class CustomerReadRepository
     public function clearLastError(): void
     {
         $this->lastError = null;
+    }
+
+    private function addressApplySql(): string
+    {
+        return "
+            OUTER APPLY (
+                SELECT TOP 1
+                    a.Phone,
+                    a.EMail,
+                    a.City AS CityCode,
+                    a.Town AS TownCode,
+                    a.Address1,
+                    a.Address2,
+                    city.Name AS CityName,
+                    district.Name AS DistrictName
+                FROM dbo.Address a
+                LEFT JOIN dbo.City city ON city.Code = a.City
+                LEFT JOIN dbo.District district ON district.CityCode = a.City AND district.Code = a.Town
+                WHERE a.CustomerId = c.Id AND ISNULL(a.isDeleted, 0) = 0
+                ORDER BY CASE WHEN ISNULL(a.isActive, 0) = 1 THEN 0 ELSE 1 END, a.Id
+            ) addr
+        ";
     }
 
     private function safeFetchAll(string $sql, array $params = []): array

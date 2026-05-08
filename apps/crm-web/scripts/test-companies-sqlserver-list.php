@@ -12,7 +12,7 @@ if (count($rows) === 0) {
 }
 
 foreach ($rows as $row) {
-    foreach (['id', 'account_code', 'name', 'account_type', 'status', 'source'] as $key) {
+    foreach (['id', 'account_code', 'name', 'account_type', 'phone', 'city', 'district', 'status', 'source'] as $key) {
         if (!array_key_exists($key, $row)) {
             throw new RuntimeException("Bayi/Firma satirinda eksik alan: $key");
         }

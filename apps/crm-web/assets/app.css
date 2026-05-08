@@ -537,13 +537,17 @@ input[list] {
 
 .filters {
     display: grid;
-    grid-template-columns: minmax(220px, 1.4fr) repeat(5, minmax(130px, 1fr)) auto;
+    grid-template-columns: minmax(240px, 1.35fr) repeat(auto-fit, minmax(150px, 1fr));
     gap: 10px;
     margin-bottom: 16px;
 }
 
 .filters.compact {
     grid-template-columns: minmax(220px, 1fr) auto;
+}
+
+.filters.compact-filters {
+    grid-template-columns: minmax(280px, 1.4fr) minmax(180px, .75fr) auto;
 }
 
 .import-panel {
@@ -570,42 +574,110 @@ tr.overdue td { background: #fff8f7; }
 tr[data-href] { cursor: pointer; }
 tr[data-href]:hover td { background: #f3f9fe; }
 
-.companies-table {
-    table-layout: fixed;
-    min-width: 1280px;
+.company-list-panel {
+    padding: 20px;
 }
 
-.companies-table th,
+.companies-table-wrap {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+}
+
+.companies-table {
+    table-layout: fixed;
+    min-width: 820px;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.companies-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 13px 12px;
+    background: #f7fbff;
+    color: #344054;
+    border-bottom: 1px solid #cfe0ee;
+    white-space: nowrap;
+}
+
 .companies-table td {
+    padding: 14px 12px;
+    vertical-align: middle;
     overflow-wrap: normal;
     word-break: normal;
 }
 
-.companies-table th:nth-child(1),
-.companies-table td:nth-child(1) { width: 8%; }
-.companies-table th:nth-child(2),
-.companies-table td:nth-child(2) {
-    width: 38%;
+.companies-table tbody tr {
+    transition: background .15s ease, box-shadow .15s ease;
+}
+
+.companies-table tbody tr:hover td {
+    background: #f8fbff;
+}
+
+.companies-table-sql th:nth-child(1),
+.companies-table-sql td:nth-child(1) { width: 12%; }
+.companies-table-sql th:nth-child(2),
+.companies-table-sql td:nth-child(2) { width: 38%; }
+.companies-table-sql th:nth-child(3),
+.companies-table-sql td:nth-child(3) { width: 14%; }
+.companies-table-sql th:nth-child(4),
+.companies-table-sql td:nth-child(4) { width: 14%; }
+.companies-table-sql th:nth-child(5),
+.companies-table-sql td:nth-child(5) { width: 12%; }
+.companies-table-sql th:nth-child(6),
+.companies-table-sql td:nth-child(6) { width: 10%; }
+
+.companies-table-local {
+    min-width: 860px;
+}
+
+.companies-table-local th:nth-child(1),
+.companies-table-local td:nth-child(1) { width: 10%; }
+.companies-table-local th:nth-child(2),
+.companies-table-local td:nth-child(2) { width: 28%; }
+.companies-table-local th:nth-child(3),
+.companies-table-local td:nth-child(3) { width: 11%; }
+.companies-table-local th:nth-child(4),
+.companies-table-local td:nth-child(4) { width: 12%; }
+.companies-table-local th:nth-child(5),
+.companies-table-local td:nth-child(5) { width: 12%; }
+.companies-table-local th:nth-child(6),
+.companies-table-local td:nth-child(6) { width: 10%; }
+.companies-table-local th:nth-child(7),
+.companies-table-local td:nth-child(7) { width: 9%; }
+.companies-table-local th:nth-child(8),
+.companies-table-local td:nth-child(8) { width: 8%; }
+
+.company-code-cell {
+    color: #355172;
+    font-weight: 800;
+}
+
+.company-name-cell {
     overflow-wrap: anywhere;
 }
-.companies-table th:nth-child(3),
-.companies-table td:nth-child(3) { width: 7%; }
-.companies-table th:nth-child(4),
-.companies-table td:nth-child(4) { width: 7%; }
-.companies-table th:nth-child(5),
-.companies-table td:nth-child(5) { width: 9%; }
-.companies-table th:nth-child(6),
-.companies-table td:nth-child(6) { width: 5%; }
-.companies-table th:nth-child(7),
-.companies-table td:nth-child(7) { width: 7%; }
-.companies-table th:nth-child(8),
-.companies-table td:nth-child(8) { width: 6%; }
-.companies-table th:nth-child(9),
-.companies-table td:nth-child(9) { width: 6%; }
-.companies-table th:nth-child(10),
-.companies-table td:nth-child(10) {
-    width: 7%;
-    text-align: right;
+
+.company-name-cell a,
+.company-name-cell strong {
+    display: inline-block;
+    color: var(--primary-dark);
+    font-weight: 800;
+    line-height: 1.35;
+}
+
+.company-name-cell small,
+.location-cell small {
+    display: block;
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.location-cell span {
+    font-weight: 700;
 }
 
 .opportunities-table {
@@ -1777,6 +1849,11 @@ dialog.modal::backdrop {
 
     .table-wrap {
         overflow: visible;
+    }
+
+    .companies-table-wrap {
+        border: 0;
+        background: transparent;
     }
 
     table,
