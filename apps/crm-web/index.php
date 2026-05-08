@@ -24,6 +24,22 @@ function money($amount): string
     return number_format((float) $amount, 2, ',', '.') . ' TL';
 }
 
+function compact_money($amount): string
+{
+    $amount = (float) $amount;
+    $absAmount = abs($amount);
+
+    if ($absAmount >= 1000000) {
+        return number_format($amount / 1000000, 1, ',', '.') . ' Mn TL';
+    }
+
+    if ($absAmount >= 1000) {
+        return number_format($amount / 1000, 0, ',', '.') . ' Bin TL';
+    }
+
+    return money($amount);
+}
+
 function pct($value, $max): int
 {
     $max = (float) $max;
@@ -150,6 +166,114 @@ function render_amount_bar_list(array $rows, string $labelKey, string $valueKey,
     }
     if (!$rows) {
         echo '<p class="muted">Veri yok</p>';
+    }
+    echo '</div>';
+}
+
+function render_print_kpi(string $label, $value, string $hint = '', string $tone = ''): void
+{
+    echo '<article class="print-kpi ' . e($tone) . '"><span>' . e($label) . '</span><strong>' . e($value) . '</strong>';
+    if ($hint !== '') {
+        echo '<small>' . e($hint) . '</small>';
+    }
+    echo '</article>';
+}
+
+function render_print_bar_chart(array $rows, string $labelKey, string $valueKey, int $limit = 5, string $empty = 'Veri yok'): void
+{
+    $rows = compact_metric_rows($rows, $labelKey, $valueKey, $limit);
+    $max = 0;
+    foreach ($rows as $row) {
+        $max = max($max, (float) ($row[$valueKey] ?? 0));
+    }
+
+    echo '<div class="print-bars">';
+    foreach ($rows as $row) {
+        $value = (float) ($row[$valueKey] ?? 0);
+        echo '<div class="print-bar-row">';
+        echo '<div class="print-bar-label"><span>' . e($row[$labelKey] ?? '-') . '</span><strong>' . e((int) $value) . '</strong></div>';
+        echo '<div class="print-bar-track"><span style="width:' . pct($value, $max) . '%"></span></div>';
+        echo '</div>';
+    }
+    if (!$rows) {
+        echo '<p class="print-empty">' . e($empty) . '</p>';
+    }
+    echo '</div>';
+}
+
+function render_print_donut_report(array $rows, string $labelKey, string $valueKey, int $limit = 6): void
+{
+    $rows = compact_metric_rows($rows, $labelKey, $valueKey, $limit);
+    $total = array_sum(array_map(static fn($row) => (float) ($row[$valueKey] ?? 0), $rows));
+    $colors = ['#236ee9', '#19bd86', '#ffb23f', '#ff5d6d', '#7256e8', '#35c7de', '#90a4bc'];
+    $segments = [];
+    $start = 0.0;
+
+    if ($total > 0) {
+        foreach ($rows as $index => $row) {
+            $value = (float) ($row[$valueKey] ?? 0);
+            $end = $start + (($value / $total) * 100);
+            $color = $colors[$index % count($colors)];
+            $segments[] = $color . ' ' . round($start, 2) . '% ' . round($end, 2) . '%';
+            $start = $end;
+        }
+    }
+
+    $style = $segments ? 'background: conic-gradient(' . implode(', ', $segments) . ')' : '';
+    echo '<div class="print-donut-wrap">';
+    echo '<div class="print-donut" style="' . e($style) . '" data-total="' . e((int) $total) . '"></div>';
+    echo '<div class="print-donut-legend">';
+    foreach ($rows as $index => $row) {
+        $value = (float) ($row[$valueKey] ?? 0);
+        $share = $total > 0 ? round(($value / $total) * 100) : 0;
+        echo '<div><i style="background:' . e($colors[$index % count($colors)]) . '"></i><span>' . e($row[$labelKey] ?? '-') . '</span><strong>' . e((int) $value) . '</strong><small>%' . e($share) . '</small></div>';
+    }
+    if (!$rows) {
+        echo '<p class="print-empty">Veri yok</p>';
+    }
+    echo '</div></div>';
+}
+
+function render_print_trend_chart(array $rows, string $labelKey, string $valueKey): void
+{
+    $max = 0;
+    foreach ($rows as $row) {
+        $max = max($max, (float) ($row[$valueKey] ?? 0));
+    }
+
+    echo '<div class="print-trend">';
+    foreach ($rows as $row) {
+        $rawLabel = (string) ($row[$labelKey] ?? '');
+        $timestamp = strtotime($rawLabel);
+        $label = $timestamp ? date('d.m', $timestamp) : substr($rawLabel, -5);
+        $value = (float) ($row[$valueKey] ?? 0);
+        echo '<div class="print-trend-point"><strong>' . e((int) $value) . '</strong><i style="height:' . pct($value, $max) . '%"></i><span>' . e($label) . '</span></div>';
+    }
+    if (!$rows) {
+        echo '<p class="print-empty">Veri yok</p>';
+    }
+    echo '</div>';
+}
+
+function render_print_pipeline(array $rows): void
+{
+    $max = 0;
+    foreach ($rows as $row) {
+        $max = max($max, (float) ($row['amount'] ?? 0), (float) ($row['total'] ?? 0));
+    }
+
+    echo '<div class="print-funnel">';
+    foreach ($rows as $row) {
+        $amount = (float) ($row['amount'] ?? 0);
+        $valueForWidth = $amount > 0 ? $amount : (float) ($row['total'] ?? 0);
+        echo '<div class="print-funnel-row" style="--w:' . pct($valueForWidth, $max) . '">';
+        echo '<span>' . e($row['stage'] ?? '-') . '</span>';
+        echo '<strong>' . e((int) ($row['total'] ?? 0)) . ' adet</strong>';
+        echo '<small>' . e(compact_money($amount)) . '</small>';
+        echo '</div>';
+    }
+    if (!$rows) {
+        echo '<p class="print-empty">Satış fırsatı yok.</p>';
     }
     echo '</div>';
 }
@@ -2724,9 +2848,15 @@ if ($page === 'reports') {
     $openOppCount = (int) scalar("SELECT COUNT(*) FROM opportunities o {$oppWhere} AND o.stage NOT IN ('Kazanıldı', 'Kaybedildi')", $oppParams);
     $wonAmount = (float) scalar("SELECT COALESCE(SUM(o.estimated_amount), 0) FROM opportunities o {$oppWhere} AND o.stage = 'Kazanıldı'", $oppParams);
     $lostAmount = (float) scalar("SELECT COALESCE(SUM(o.estimated_amount), 0) FROM opportunities o {$oppWhere} AND o.stage = 'Kaybedildi'", $oppParams);
+    $openOppAmount = (float) scalar("SELECT COALESCE(SUM(o.estimated_amount), 0) FROM opportunities o {$oppWhere} AND o.stage NOT IN ('Kazanıldı', 'Kaybedildi')", $oppParams);
     $wonCount = (int) scalar("SELECT COUNT(*) FROM opportunities o {$oppWhere} AND o.stage = 'Kazanıldı'", $oppParams);
     $closedCount = (int) scalar("SELECT COUNT(*) FROM opportunities o {$oppWhere} AND o.stage IN ('Kazanıldı', 'Kaybedildi')", $oppParams);
+    $totalOpenTasks = (int) scalar("SELECT COUNT(*) FROM tasks t {$taskWhere}", $taskParams);
     $winRate = $closedCount > 0 ? round(($wonCount / $closedCount) * 100) . '%' : '0%';
+    $stageOrder = array_flip(opportunity_stages());
+    usort($oppReport, static fn(array $left, array $right): int => ($stageOrder[$left['stage'] ?? ''] ?? 99) <=> ($stageOrder[$right['stage'] ?? ''] ?? 99));
+    $companySourceLabel = $usingSqlServerCompanies ? 'SQL Server dbo.Customer' : 'CRM veritabanı';
+    $reportUser = current_user();
     ?>
     <section class="print-report-cover" aria-hidden="true">
         <div class="print-brand">
@@ -2741,6 +2871,81 @@ if ($page === 'reports') {
             <strong><?= e($periodLabel) ?></strong>
             <small><?= e(date('d.m.Y H:i')) ?></small>
         </div>
+    </section>
+    <section class="print-report-sheet" aria-label="PDF raporu">
+        <header class="print-report-header">
+            <div class="print-report-brand">
+                <img src="<?= e(rtrim(app_config('base_url'), '/')) ?>/assets/brand/bilnex-logo.svg" alt="Bilnex">
+                <div>
+                    <strong>İş Ortakları CRM</strong>
+                    <span>Yönetim performans raporu</span>
+                </div>
+            </div>
+            <div class="print-report-title">
+                <span>Rapor dönemi</span>
+                <h2><?= e($periodLabel) ?></h2>
+                <small><?= e(date('d.m.Y H:i')) ?> tarihinde <?= e($reportUser['full_name']) ?> tarafından alındı</small>
+            </div>
+            <div class="print-report-source">
+                <span>Veri kaynağı</span>
+                <strong><?= e($companySourceLabel) ?></strong>
+                <small><?= e($selectedAccountType !== '' ? $selectedAccountType : 'Tüm cari türleri') ?></small>
+            </div>
+        </header>
+        <section class="print-kpi-grid">
+            <?php
+                render_print_kpi('Görüşme', $totalInteractions, 'Seçili dönem aktivitesi', 'tone-blue');
+                render_print_kpi('Cari', number_format((float) $totalCompanies, 0, ',', '.'), $companySourceLabel, 'tone-violet');
+                render_print_kpi('Açık iş', $totalOpenTasks, 'Geciken: ' . $totalOverdue, $totalOverdue > 0 ? 'tone-red' : 'tone-green');
+                render_print_kpi('Açık fırsat', $openOppCount, compact_money($openOppAmount), 'tone-cyan');
+                render_print_kpi('Kazanılan', compact_money($wonAmount), 'Oran: ' . $winRate, 'tone-green');
+                render_print_kpi('Kaybedilen', compact_money($lostAmount), 'Kapanan fırsatlar', 'tone-orange');
+            ?>
+        </section>
+        <section class="print-report-main">
+            <article class="print-card print-card-large">
+                <div class="print-card-head"><h3>Cari türü dağılımı</h3><span><?= e(number_format((float) $totalCompanies, 0, ',', '.')) ?> kayıt</span></div>
+                <?php render_print_donut_report($typeReport, 'account_type', 'total', 6); ?>
+            </article>
+            <article class="print-card">
+                <div class="print-card-head"><h3>Görüşme trendi</h3><span>Son 14 gün</span></div>
+                <?php render_print_trend_chart($interactionTrend, 'day', 'total'); ?>
+            </article>
+            <article class="print-card">
+                <div class="print-card-head"><h3>Satış pipeline</h3><span><?= e(compact_money($openOppAmount + $wonAmount + $lostAmount)) ?></span></div>
+                <?php render_print_pipeline($oppReport); ?>
+            </article>
+            <article class="print-card">
+                <div class="print-card-head"><h3>Personel performansı</h3><span>Aktivite</span></div>
+                <?php render_print_bar_chart($staff, 'full_name', 'total', 5); ?>
+            </article>
+            <article class="print-card">
+                <div class="print-card-head"><h3>Cari takip durumu</h3><span>Dağılım</span></div>
+                <?php render_print_bar_chart($statusReport, 'status', 'total', 5); ?>
+            </article>
+            <article class="print-card">
+                <div class="print-card-head"><h3>Görüşme sonuçları</h3><span>Sonuç özeti</span></div>
+                <?php render_print_bar_chart($resultReport, 'result', 'total', 5); ?>
+            </article>
+            <article class="print-card print-risk-card">
+                <div class="print-card-head"><h3>Geciken takipler</h3><span><?= e($totalOverdue) ?> açık risk</span></div>
+                <div class="print-risk-list">
+                    <?php foreach (array_slice($overdue, 0, 5) as $task): ?>
+                        <div>
+                            <strong><?= e($task['title']) ?></strong>
+                            <span><?= e($task['company_name'] ?? 'Cari seçilmedi') ?> · <?= e($task['assigned_to_name'] ?? '-') ?></span>
+                            <small><?= e($task['due_date']) ?></small>
+                        </div>
+                    <?php endforeach; ?>
+                    <?php if (!$overdue): ?><p class="print-empty">Geciken takip bulunmuyor.</p><?php endif; ?>
+                </div>
+            </article>
+        </section>
+        <footer class="print-report-footer">
+            <span>Bilnex İş Ortakları CRM</span>
+            <strong>Profesyonel özet rapor</strong>
+            <span>PDF çıktısı için A4 yatay tasarlanmıştır.</span>
+        </footer>
     </section>
     <section class="report-hero panel">
         <div>

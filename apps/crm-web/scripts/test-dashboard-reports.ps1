@@ -292,6 +292,7 @@ require 'app/bootstrap.php';
     Assert-True ($adminReports.Content -like "*$interactionNote*" -and $adminReports.Content -like "*DashRpt Admin Note $stamp*") "admin reports show all interaction entries"
     Assert-True ($adminReports.Content -like "*$overdueTask*" -and $adminReports.Content -like "*DashRpt Admin Task $stamp*") "admin reports show overdue task entries"
     Assert-True ($adminReports.Content -like "*Teklif verildi*" -and $adminReports.Content -like "*Kazanıldı*") "admin reports show opportunity stages"
+    Assert-True ($adminReports.Content -like "*print-report-sheet*" -and $adminReports.Content -like "*print-kpi-grid*" -and $adminReports.Content -like "*print-funnel*") "admin reports include one-page PDF dashboard layout"
 
     $managerReports = Invoke-WebRequest -Uri "$base/index.php?page=reports&date_filter=today" -WebSession $managerSession -UseBasicParsing
     Assert-True ($managerReports.Content -like "*$interactionNote*" -and $managerReports.Content -like "*$overdueTask*") "manager reports show subordinate entries"
