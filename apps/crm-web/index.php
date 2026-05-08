@@ -1450,11 +1450,11 @@ if ($page === 'task_form') {
         </label>
         <label>Termin tarihi <input type="date" name="due_date"></label>
         <?php if ($usingSqlCustomerPicker): ?>
-            <label class="wide">İlgili cari
+            <label class="wide">İlgili cari <small class="muted">Opsiyonel</small>
                 <input type="hidden" name="company_id" value="">
                 <input type="hidden" name="sql_customer_id" data-sql-customer-id>
                 <div class="sql-customer-picker" data-sql-customer-picker>
-                    <button class="lookup-button" type="button" data-open-sql-customer-picker><span data-sql-customer-label>Cari seçmek için tıklayın</span></button>
+                    <button class="lookup-button" type="button" data-open-sql-customer-picker><span data-sql-customer-label>Cari seçmeden de kaydedebilirsiniz</span></button>
                     <button class="btn small" type="button" data-clear-sql-customer>Temizle</button>
                 </div>
             </label>
@@ -1550,11 +1550,11 @@ if ($page === 'followups') {
             </label>
             <label>Termin tarihi <input type="date" name="due_date"></label>
             <?php if ($usingSqlCustomerPicker): ?>
-                <label class="wide">İlgili cari
+                <label class="wide">İlgili cari <small class="muted">Opsiyonel</small>
                     <input type="hidden" name="company_id" value="">
                     <input type="hidden" name="sql_customer_id" data-sql-customer-id>
                     <div class="sql-customer-picker" data-sql-customer-picker>
-                        <button class="lookup-button" type="button" data-open-sql-customer-picker><span data-sql-customer-label>Cari seçmek için tıklayın</span></button>
+                        <button class="lookup-button" type="button" data-open-sql-customer-picker><span data-sql-customer-label>Cari seçmeden de kaydedebilirsiniz</span></button>
                         <button class="btn small" type="button" data-clear-sql-customer>Temizle</button>
                     </div>
                 </label>

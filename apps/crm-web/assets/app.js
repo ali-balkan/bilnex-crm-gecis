@@ -111,7 +111,7 @@
                 const idInput = picker ? qs('[data-sql-customer-id]', picker.closest('form')) : null;
                 const label = picker ? qs('[data-sql-customer-label]', picker) : null;
                 if (idInput) idInput.value = '';
-                if (label) label.textContent = 'Cari seçmek için tıklayın';
+                if (label) label.textContent = 'Cari seçmeden de kaydedebilirsiniz';
             });
         });
 
