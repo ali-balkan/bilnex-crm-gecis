@@ -10,7 +10,7 @@ final class CustomerReadRepository
     {
         $limit = max(1, min($limit, 500));
 
-        return $this->connection->fetchAll("
+        return $this->safeFetchAll("
             SELECT TOP ($limit)
                 c.Id,
                 c.CustomerTypeId,
@@ -39,7 +39,7 @@ final class CustomerReadRepository
 
     public function countActiveCustomers(): int
     {
-        $row = $this->connection->fetchOne("
+        $row = $this->safeFetchOne("
             SELECT COUNT(*) AS total
             FROM dbo.Customer c
             WHERE ISNULL(c.isDeleted, 0) = 0
@@ -50,7 +50,7 @@ final class CustomerReadRepository
 
     public function countActiveCustomersByType(): array
     {
-        return $this->connection->fetchAll("
+        return $this->safeFetchAll("
             SELECT
                 c.CustomerTypeId,
                 ct.Name AS CustomerTypeName,
@@ -65,7 +65,7 @@ final class CustomerReadRepository
 
     public function findById(int $id): ?array
     {
-        return $this->connection->fetchOne("
+        return $this->safeFetchOne("
             SELECT
                 c.Id,
                 c.CustomerTypeId,
@@ -89,5 +89,25 @@ final class CustomerReadRepository
             FROM dbo.Customer c
             WHERE c.Id = :id AND ISNULL(c.isDeleted, 0) = 0
         ", [':id' => $id]);
+    }
+
+    private function safeFetchAll(string $sql, array $params = []): array
+    {
+        try {
+            return $this->connection->fetchAll($sql, $params);
+        } catch (Throwable $exception) {
+            error_log('[Bilnex CRM] SQL Server Customer read failed: ' . $exception->getMessage());
+            return [];
+        }
+    }
+
+    private function safeFetchOne(string $sql, array $params = []): ?array
+    {
+        try {
+            return $this->connection->fetchOne($sql, $params);
+        } catch (Throwable $exception) {
+            error_log('[Bilnex CRM] SQL Server Customer read failed: ' . $exception->getMessage());
+            return null;
+        }
     }
 }
