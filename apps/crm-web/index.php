@@ -1138,7 +1138,7 @@ if ($page === 'companies') {
         <?php if ($sqlCustomerReadError): ?>
             <div class="alert alert-danger">
                 SQL Server Customer kaynagi okunamadi. Coolify ortam degiskenlerinde BILNEX_SQL_SERVER, BILNEX_SQL_DATABASE, kullanici ve sifreyi kontrol edin.
-                <?php if (can_administer_users()): ?>
+                <?php if (can_manage_users()): ?>
                     <br><small><?= e($sqlCustomerReadError) ?></small>
                 <?php endif; ?>
             </div>
