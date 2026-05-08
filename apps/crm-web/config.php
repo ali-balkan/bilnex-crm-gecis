@@ -8,6 +8,10 @@ if ($baseUrl === false) {
 
 $sqlServerLocalConfig = __DIR__ . '/data/sqlserver.local.php';
 $sqlServerLocal = is_file($sqlServerLocalConfig) ? require $sqlServerLocalConfig : [];
+$sqlServerHost = getenv('BILNEX_SQL_SERVER') ?: ($sqlServerLocal['server'] ?? 'localhost\\BILNEXSQLCRM');
+if (str_starts_with($sqlServerHost, 'bilnex-sqlserver-')) {
+    $sqlServerHost = '72.60.23.244,1433';
+}
 
 return [
     'app_name' => 'Bilnex İş Ortakları CRM',
@@ -16,7 +20,7 @@ return [
     'db_path' => __DIR__ . '/data/crm.sqlite',
     'company_source' => getenv('CRM_COMPANY_SOURCE') ?: 'sqlserver',
     'sql_server' => [
-        'server' => getenv('BILNEX_SQL_SERVER') ?: ($sqlServerLocal['server'] ?? 'localhost\\BILNEXSQLCRM'),
+        'server' => $sqlServerHost,
         'database' => getenv('BILNEX_SQL_DATABASE') ?: ($sqlServerLocal['database'] ?? 'BILNEX_CRMDB'),
         'username' => getenv('BILNEX_SQL_USERNAME') ?: ($sqlServerLocal['username'] ?? ''),
         'password' => getenv('BILNEX_SQL_PASSWORD') ?: ($sqlServerLocal['password'] ?? ''),

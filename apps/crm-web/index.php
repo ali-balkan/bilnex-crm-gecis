@@ -1119,13 +1119,25 @@ if ($page === 'companies') {
     }
     filter_bar('companies', $extras);
     $usingSqlServerCompanies = company_source() === 'sqlserver';
+    $sqlCustomerReader = $usingSqlServerCompanies ? bilnex_customer_reader() : null;
     $companies = $usingSqlServerCompanies
         ? sql_customer_rows_for_company_list()
         : rows("SELECT c.*, u.full_name responsible_name FROM companies c LEFT JOIN users u ON u.id = c.responsible_user_id {$where} ORDER BY c.updated_at DESC", $params);
-    $companyTotal = $usingSqlServerCompanies ? bilnex_customer_reader()->countActiveCustomers() : count($companies);
+    $sqlCustomerReadError = $sqlCustomerReader instanceof CustomerReadRepository ? $sqlCustomerReader->lastError() : null;
+    $companyTotal = count($companies);
+    if ($usingSqlServerCompanies && !$sqlCustomerReadError && $sqlCustomerReader instanceof CustomerReadRepository) {
+        $activeCustomerTotal = $sqlCustomerReader->countActiveCustomers();
+        $sqlCustomerReadError = $sqlCustomerReader->lastError();
+        if (!$sqlCustomerReadError) {
+            $companyTotal = $activeCustomerTotal;
+        }
+    }
     ?>
     <?php if ($usingSqlServerCompanies): ?>
         <div class="alert">Bayi/Firma listesi SQL Server dbo.Customer kaynağından sadece okuma modunda gösteriliyor.</div>
+        <?php if ($sqlCustomerReadError): ?>
+            <div class="alert alert-danger">SQL Server Customer kaynagi okunamadi. Coolify ortam degiskenlerinde BILNEX_SQL_SERVER, BILNEX_SQL_DATABASE, kullanici ve sifreyi kontrol edin.</div>
+        <?php endif; ?>
     <?php endif; ?>
     <form class="panel import-panel" method="post" action="<?= e(app_url('import_companies')) ?>" enctype="multipart/form-data">
         <?= csrf_field() ?>

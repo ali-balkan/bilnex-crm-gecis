@@ -125,7 +125,14 @@ final class ReadOnlySqlServerConnection
             2 => ['pipe', 'w'],
         ];
 
-        $process = proc_open($command, $descriptorSpec, $pipes);
+        $env = array_merge($_ENV, [
+            'BILNEX_SQL_SERVER' => (string) ($this->config['server'] ?? ''),
+            'BILNEX_SQL_DATABASE' => (string) ($this->config['database'] ?? ''),
+            'BILNEX_SQL_USERNAME' => (string) ($this->config['username'] ?? ''),
+            'BILNEX_SQL_PASSWORD' => (string) ($this->config['password'] ?? ''),
+        ]);
+
+        $process = proc_open($command, $descriptorSpec, $pipes, null, $env);
         if (!is_resource($process)) {
             throw new RuntimeException('SQL Server read-only bridge baslatilamadi.');
         }
