@@ -1,4 +1,4 @@
-FROM php:8.2-apache
+FROM php:8.2-apache-bookworm
 
 ENV ACCEPT_EULA=Y \
     APACHE_DOCUMENT_ROOT=/var/www/html/apps/crm-web
@@ -12,8 +12,7 @@ RUN apt-get update \
         libzip-dev \
         unzip \
     && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
-    && . /etc/os-release \
-    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/${VERSION_ID}/prod ${VERSION_CODENAME} main" > /etc/apt/sources.list.d/mssql-release.list \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/12/prod bookworm main" > /etc/apt/sources.list.d/mssql-release.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends msodbcsql18 \
     && docker-php-ext-install pdo pdo_sqlite zip \
