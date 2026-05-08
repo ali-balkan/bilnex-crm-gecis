@@ -22,4 +22,8 @@ foreach ($rows as $row) {
     }
 }
 
+if (!array_filter(array_column($rows, 'phone'))) {
+    throw new RuntimeException('SQL Server telefon alanlari cozumlenemedi.');
+}
+
 echo 'Bayi/Firma SQL Server Customer liste testi tamamlandi. Okunan kayit: ' . count($rows) . PHP_EOL;

@@ -118,13 +118,70 @@ function sql_customer_rows_for_company_list(int $limit = 250, ?int $customerType
     }, $items);
 }
 
-function display_phone(?string $value): string
+function bilnex_contact_crypto_material(): ?array
 {
-    $value = trim((string) $value);
-    if ($value === '') {
-        return '';
+    static $material = null;
+    if ($material !== null) {
+        return $material ?: null;
     }
 
+    $envKey = trim((string) getenv('BILNEX_CONTACT_AES_KEY_HEX'));
+    $envIv = trim((string) getenv('BILNEX_CONTACT_AES_IV_HEX'));
+    if ($envKey !== '' && $envIv !== '') {
+        $material = ['key_hex' => $envKey, 'iv_hex' => $envIv];
+        return $material;
+    }
+
+    if (company_source() === 'sqlserver') {
+        $material = bilnex_customer_reader()->contactCryptoMaterial() ?: false;
+        return $material ?: null;
+    }
+
+    $material = false;
+    return null;
+}
+
+function bilnex_decrypt_contact_value(?string $value): string
+{
+    $value = trim((string) $value);
+    if ($value === '' || !function_exists('openssl_decrypt')) {
+        return $value;
+    }
+
+    $material = bilnex_contact_crypto_material();
+    if (!$material) {
+        return $value;
+    }
+
+    $key = hex2bin((string) $material['key_hex']);
+    $iv = hex2bin((string) $material['iv_hex']);
+    if ($key === false || $iv === false) {
+        return $value;
+    }
+
+    $base64 = strtr($value, '-_', '+/');
+    $padding = strlen($base64) % 4;
+    if ($padding > 0) {
+        $base64 .= str_repeat('=', 4 - $padding);
+    }
+
+    $cipherBytes = base64_decode($base64, true);
+    if ($cipherBytes === false) {
+        return $value;
+    }
+
+    $plain = openssl_decrypt($cipherBytes, 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv);
+    return is_string($plain) && trim($plain) !== '' ? trim($plain) : $value;
+}
+
+function phone_digits(?string $value): string
+{
+    return preg_replace('/\D+/', '', (string) $value) ?? '';
+}
+
+function valid_display_phone(?string $value): string
+{
+    $value = trim((string) $value);
     $digits = preg_replace('/\D+/', '', $value) ?? '';
     if (strlen($digits) < 7 || strlen($digits) > 15) {
         return '';
@@ -133,9 +190,23 @@ function display_phone(?string $value): string
     return preg_match('/^\+?[0-9\s().-]+$/', $value) ? $value : '';
 }
 
+function display_phone(?string $value): string
+{
+    $phone = valid_display_phone($value);
+    if ($phone !== '') {
+        return $phone;
+    }
+
+    return valid_display_phone(bilnex_decrypt_contact_value($value));
+}
+
 function display_tax_no(?string $value): string
 {
-    $digits = preg_replace('/\D+/', '', (string) $value) ?? '';
+    $digits = phone_digits($value);
+    if (!in_array(strlen($digits), [10, 11], true)) {
+        $digits = phone_digits(bilnex_decrypt_contact_value($value));
+    }
+
     return in_array(strlen($digits), [10, 11], true) ? $digits : '';
 }
 

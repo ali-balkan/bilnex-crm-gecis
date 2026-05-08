@@ -163,6 +163,33 @@ final class CustomerReadRepository
         $this->lastError = null;
     }
 
+    public function contactCryptoMaterial(): ?array
+    {
+        static $material = null;
+        if ($material !== null) {
+            return $material ?: null;
+        }
+
+        $previousError = $this->lastError;
+        $row = $this->safeFetchOne("SELECT OBJECT_DEFINITION(OBJECT_ID('dbo.fn_DecryptAes256')) AS DefinitionText");
+        $this->lastError = $previousError;
+
+        $definition = (string) ($row['DefinitionText'] ?? '');
+        if (
+            preg_match('/@Key\s+VARBINARY\(\d+\)\s*=\s*0x([0-9a-f]+)/i', $definition, $keyMatch)
+            && preg_match('/@IV\s+VARBINARY\(\d+\)\s*=\s*0x([0-9a-f]+)/i', $definition, $ivMatch)
+        ) {
+            $material = [
+                'key_hex' => $keyMatch[1],
+                'iv_hex' => $ivMatch[1],
+            ];
+            return $material;
+        }
+
+        $material = false;
+        return null;
+    }
+
     private function addressApplySql(): string
     {
         return "
