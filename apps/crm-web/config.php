@@ -9,8 +9,15 @@ if ($baseUrl === false) {
 $sqlServerLocalConfig = __DIR__ . '/data/sqlserver.local.php';
 $sqlServerLocal = is_file($sqlServerLocalConfig) ? require $sqlServerLocalConfig : [];
 $sqlServerHost = getenv('BILNEX_SQL_SERVER') ?: ($sqlServerLocal['server'] ?? 'localhost\\BILNEXSQLCRM');
+$sqlServerCandidates = [$sqlServerHost];
 if (str_starts_with($sqlServerHost, 'bilnex-sqlserver-')) {
-    $sqlServerHost = '72.60.23.244,1433';
+    $sqlServerCandidates = [
+        '72.60.23.244,1433',
+        '172.17.0.1,1433',
+        'host.docker.internal,1433',
+        $sqlServerHost,
+    ];
+    $sqlServerHost = $sqlServerCandidates[0];
 }
 
 return [
@@ -21,6 +28,7 @@ return [
     'company_source' => getenv('CRM_COMPANY_SOURCE') ?: 'sqlserver',
     'sql_server' => [
         'server' => $sqlServerHost,
+        'server_candidates' => $sqlServerCandidates,
         'database' => getenv('BILNEX_SQL_DATABASE') ?: ($sqlServerLocal['database'] ?? 'BILNEX_CRMDB'),
         'username' => getenv('BILNEX_SQL_USERNAME') ?: ($sqlServerLocal['username'] ?? ''),
         'password' => getenv('BILNEX_SQL_PASSWORD') ?: ($sqlServerLocal['password'] ?? ''),

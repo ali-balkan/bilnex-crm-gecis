@@ -60,7 +60,7 @@ final class ReadOnlySqlServerConnection
             throw new RuntimeException('pdo_sqlsrv PHP eklentisi yuklu degil. SQL Server okuma katmani hazir, ancak baglanti icin driver kurulumu gerekir.');
         }
 
-        $server = $this->config['server'] ?? '';
+        $serverCandidates = $this->serverCandidates();
         $database = $this->config['database'] ?? '';
         $username = $this->config['username'] ?? '';
         $password = $this->config['password'] ?? '';
@@ -68,29 +68,72 @@ final class ReadOnlySqlServerConnection
         $loginTimeout = (int) ($this->config['login_timeout'] ?? 5);
         $loginTimeout = max(1, min($loginTimeout, 30));
 
-        $dsn = sprintf(
-            'sqlsrv:Server=%s;Database=%s;TrustServerCertificate=%s;LoginTimeout=%d',
-            $server,
-            $database,
-            $trustCertificate,
-            $loginTimeout
-        );
-
-        try {
-            $this->pdo = new PDO($dsn, $username, $password, [
-                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                PDO::ATTR_TIMEOUT => $loginTimeout,
-            ]);
-        } catch (PDOException $exception) {
-            throw new RuntimeException(
-                'SQL Server baglantisi kurulamadi. BILNEX_SQL_SERVER, kullanici/sifre ve container network ayarlarini kontrol edin.',
-                0,
-                $exception
+        $lastException = null;
+        foreach ($serverCandidates as $server) {
+            $dsn = sprintf(
+                'sqlsrv:Server=%s;Database=%s;TrustServerCertificate=%s;LoginTimeout=%d',
+                $server,
+                $database,
+                $trustCertificate,
+                $loginTimeout
             );
+
+            try {
+                $this->pdo = new PDO($dsn, $username, $password, [
+                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                    PDO::ATTR_TIMEOUT => $loginTimeout,
+                ]);
+                $this->config['server'] = $server;
+                return $this->pdo;
+            } catch (PDOException $exception) {
+                $lastException = $exception;
+            }
         }
 
-        return $this->pdo;
+        throw new RuntimeException(
+            'SQL Server baglantisi kurulamadi. BILNEX_SQL_SERVER, kullanici/sifre ve container network ayarlarini kontrol edin.',
+            0,
+            $lastException
+        );
+    }
+
+    private function serverCandidates(): array
+    {
+        $servers = $this->config['server_candidates'] ?? [$this->config['server'] ?? ''];
+        if (!is_array($servers)) {
+            $servers = [$servers];
+        }
+
+        $result = [];
+        foreach ($servers as $server) {
+            $server = trim((string) $server);
+            if ($server !== '' && !in_array($server, $result, true)) {
+                $result[] = $server;
+            }
+        }
+
+        if (!$result) {
+            $result[] = '';
+        }
+
+        return $result;
+    }
+
+    private function activeServer(): string
+    {
+        $servers = $this->serverCandidates();
+        return $servers[0] ?? '';
+    }
+
+    private function bridgeEnvironment(): array
+    {
+        return array_merge($_ENV, [
+            'BILNEX_SQL_SERVER' => (string) ($this->config['server'] ?? $this->activeServer()),
+            'BILNEX_SQL_DATABASE' => (string) ($this->config['database'] ?? ''),
+            'BILNEX_SQL_USERNAME' => (string) ($this->config['username'] ?? ''),
+            'BILNEX_SQL_PASSWORD' => (string) ($this->config['password'] ?? ''),
+        ]);
     }
 
     private function usesDotnetBridge(): bool
@@ -125,12 +168,7 @@ final class ReadOnlySqlServerConnection
             2 => ['pipe', 'w'],
         ];
 
-        $env = array_merge($_ENV, [
-            'BILNEX_SQL_SERVER' => (string) ($this->config['server'] ?? ''),
-            'BILNEX_SQL_DATABASE' => (string) ($this->config['database'] ?? ''),
-            'BILNEX_SQL_USERNAME' => (string) ($this->config['username'] ?? ''),
-            'BILNEX_SQL_PASSWORD' => (string) ($this->config['password'] ?? ''),
-        ]);
+        $env = $this->bridgeEnvironment();
 
         $process = proc_open($command, $descriptorSpec, $pipes, null, $env);
         if (!is_resource($process)) {
