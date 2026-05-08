@@ -84,7 +84,7 @@ input, select, textarea, button { font: inherit; min-width: 0; }
     line-height: 1.15;
 }
 
-.brand small, .user-box span { display: block; color: #c9d9ee; margin-top: 3px; }
+.brand small { display: block; color: #c9d9ee; margin-top: 3px; }
 
 .sidebar nav { display: grid; gap: 6px; }
 
@@ -125,7 +125,116 @@ input, select, textarea, button { font: inherit; min-width: 0; }
     border-top: 1px solid rgba(255, 255, 255, .15);
 }
 
-.user-box a { display: inline-block; margin-top: 10px; color: #fff; }
+.profile-menu summary {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    padding: 8px;
+    margin: -8px;
+    border-radius: 8px;
+    cursor: pointer;
+    list-style: none;
+}
+
+.profile-menu summary::-webkit-details-marker {
+    display: none;
+}
+
+.profile-menu summary:hover,
+.profile-menu[open] summary {
+    background: rgba(255, 255, 255, .1);
+}
+
+.profile-avatar {
+    width: 44px;
+    height: 44px;
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 44px;
+    overflow: hidden;
+    border-radius: 999px;
+    border: 2px solid rgba(255, 255, 255, .72);
+    background: linear-gradient(135deg, var(--primary), #16B4F2);
+    color: #fff;
+    font-weight: 800;
+    letter-spacing: 0;
+}
+
+.profile-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.profile-avatar.large {
+    width: 82px;
+    height: 82px;
+    flex-basis: 82px;
+    border-color: #fff;
+    box-shadow: 0 12px 28px rgba(6, 33, 72, .16);
+    font-size: 24px;
+}
+
+.profile-summary-text {
+    min-width: 0;
+}
+
+.profile-summary-text strong,
+.profile-summary-text small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.profile-summary-text small {
+    color: #c9d9ee;
+    margin-top: 3px;
+}
+
+.profile-chevron {
+    color: #c9d9ee;
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.profile-menu[open] .profile-chevron {
+    transform: rotate(180deg);
+}
+
+.profile-menu-panel {
+    display: grid;
+    gap: 6px;
+    margin-top: 12px;
+    padding: 8px;
+    border: 1px solid rgba(255, 255, 255, .16);
+    border-radius: 8px;
+    background: rgba(2, 16, 39, .22);
+}
+
+.profile-menu-panel a,
+.profile-menu-panel button {
+    display: flex;
+    width: 100%;
+    min-height: 36px;
+    align-items: center;
+    border: 0;
+    border-radius: 7px;
+    padding: 8px 10px;
+    background: transparent;
+    color: #fff;
+    font: inherit;
+    font-weight: 700;
+    text-align: left;
+    cursor: pointer;
+}
+
+.profile-menu-panel a:hover,
+.profile-menu-panel button:hover {
+    background: rgba(255, 255, 255, .1);
+    text-decoration: none;
+}
 
 .content {
     padding: 24px;
@@ -368,6 +477,27 @@ td small {
     gap: 18px;
 }
 
+.profile-hero {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.profile-hero h2 {
+    margin-bottom: 4px;
+}
+
+.profile-settings-grid {
+    align-items: start;
+}
+
+.profile-session {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+}
+
 .analytics-split {
     display: grid;
     grid-template-columns: minmax(240px, .8fr) minmax(0, 1.2fr);
@@ -537,7 +667,20 @@ input[list] {
     color: #fff;
 }
 .btn.primary:hover { background: linear-gradient(135deg, #057BCD, var(--primary-dark)); }
+.btn.danger {
+    background: #fff8f6;
+    border-color: #f5c6b8;
+    color: var(--danger);
+}
+.btn.danger:hover {
+    background: #ffe8e1;
+    border-color: #f2a48c;
+}
 .btn.small { min-height: 32px; padding: 6px 10px; font-size: 13px; }
+
+.delete-form {
+    display: inline-flex;
+}
 
 .toolbar {
     display: flex;
@@ -1765,7 +1908,7 @@ dialog.modal::backdrop {
     .brand-logo-wrap { width: 56px; flex-basis: 56px; }
     .user-box { margin-top: 0; }
     .content { padding: 16px; }
-    .topbar, .detail-head, .actions, .section-title, .report-hero, .field-hero { align-items: stretch; flex-direction: column; }
+    .topbar, .detail-head, .actions, .section-title, .report-hero, .field-hero, .profile-session { align-items: stretch; flex-direction: column; }
     .report-actions, .quick-actions { justify-content: stretch; }
     .report-actions .btn, .quick-actions .btn { width: 100%; }
     .stats-grid, .grid-two, .form-grid, .filters, .import-panel, .dashboard-grid, .pipeline, .field-focus-grid, .analytics-split, .task-command, .task-stats, .task-meta, .sql-customer-picker, .sql-search-row, .field-action-row, .dashboard-list-grid, .page-dashboard .stats-grid { grid-template-columns: 1fr; }

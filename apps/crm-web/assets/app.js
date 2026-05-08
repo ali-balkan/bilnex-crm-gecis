@@ -25,6 +25,14 @@
         });
     });
 
+    qsa('form[data-confirm]').forEach((form) => {
+        form.addEventListener('submit', (event) => {
+            if (!window.confirm(form.dataset.confirm || 'Bu kayıt silinsin mi?')) {
+                event.preventDefault();
+            }
+        });
+    });
+
     qsa('[data-export-table]').forEach((button) => {
         button.addEventListener('click', () => {
             const table = qs(button.dataset.exportTable);
@@ -108,9 +116,12 @@
         qsa('[data-clear-sql-customer]').forEach((button) => {
             button.addEventListener('click', () => {
                 const picker = button.closest('[data-sql-customer-picker]');
-                const idInput = picker ? qs('[data-sql-customer-id]', picker.closest('form')) : null;
+                const form = picker ? picker.closest('form') : null;
+                const idInput = form ? qs('[data-sql-customer-id]', form) : null;
+                const companyInput = form ? qs('input[name="company_id"]', form) : null;
                 const label = picker ? qs('[data-sql-customer-label]', picker) : null;
                 if (idInput) idInput.value = '';
+                if (companyInput) companyInput.value = '';
                 if (label) label.textContent = 'Cari seçmeden de kaydedebilirsiniz';
             });
         });
@@ -136,8 +147,10 @@
             if (!selectButton || !activePicker) return;
             const form = activePicker.closest('form');
             const idInput = form ? qs('[data-sql-customer-id]', form) : null;
+            const companyInput = form ? qs('input[name="company_id"]', form) : null;
             const label = qs('[data-sql-customer-label]', activePicker);
             if (idInput) idInput.value = selectButton.dataset.id || '';
+            if (companyInput) companyInput.value = '';
             if (label) label.textContent = selectButton.dataset.label || 'SQL cari seçildi';
             customerDialog.close();
         });

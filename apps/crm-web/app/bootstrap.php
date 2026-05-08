@@ -324,6 +324,7 @@ function init_db(): void
             full_name TEXT NOT NULL,
             role TEXT NOT NULL,
             active INTEGER NOT NULL DEFAULT 1,
+            avatar_path TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 
@@ -403,6 +404,12 @@ function init_db(): void
             FOREIGN KEY (assigned_to) REFERENCES users(id) ON DELETE SET NULL
         );
     ");
+
+    $userColumns = $pdo->query('PRAGMA table_info(users)')->fetchAll();
+    $userColumnNames = array_map(fn($column) => $column['name'], $userColumns);
+    if (!in_array('avatar_path', $userColumnNames, true)) {
+        $pdo->exec("ALTER TABLE users ADD COLUMN avatar_path TEXT");
+    }
 
     $companyColumns = $pdo->query('PRAGMA table_info(companies)')->fetchAll();
     $companyColumnNames = array_map(fn($column) => $column['name'], $companyColumns);
@@ -770,6 +777,61 @@ function task_visibility_condition(string $alias = 't'): array
     }
 
     return [' AND (' . implode(' OR ', $conditions) . ')', $params];
+}
+
+function opportunity_visibility_condition(string $alias = 'o'): array
+{
+    $roles = task_visible_roles_for_current_user();
+    if ($roles === null) {
+        return ['', []];
+    }
+
+    $userId = (int) (current_user()['id'] ?? 0);
+    if ($userId <= 0) {
+        return [' AND 1 = 0', []];
+    }
+
+    $prefix = preg_replace('/[^A-Za-z0-9_]/', '', $alias) ?: 'o';
+    $salespersonParam = ':opportunity_scope_salesperson_' . $prefix;
+    $params = [$salespersonParam => $userId];
+    $conditions = ["{$alias}.salesperson_id = {$salespersonParam}"];
+
+    $roleValues = role_database_values($roles);
+    if ($roleValues) {
+        $placeholders = [];
+        foreach ($roleValues as $index => $roleValue) {
+            $param = ':opportunity_scope_role_' . $prefix . '_' . $index;
+            $placeholders[] = $param;
+            $params[$param] = $roleValue;
+        }
+        $conditions[] = "EXISTS (SELECT 1 FROM users opportunity_scope_user WHERE opportunity_scope_user.id = {$alias}.salesperson_id AND opportunity_scope_user.role IN (" . implode(', ', $placeholders) . '))';
+    }
+
+    return [' AND (' . implode(' OR ', $conditions) . ')', $params];
+}
+
+function user_can_access_task(int $taskId): bool
+{
+    if ($taskId <= 0) {
+        return false;
+    }
+
+    [$scopeSql, $scopeParams] = task_visibility_condition('t');
+    $stmt = db()->prepare("SELECT COUNT(*) FROM tasks t WHERE t.id = :id{$scopeSql}");
+    $stmt->execute($scopeParams + [':id' => $taskId]);
+    return (int) $stmt->fetchColumn() > 0;
+}
+
+function user_can_access_opportunity(int $opportunityId): bool
+{
+    if ($opportunityId <= 0) {
+        return false;
+    }
+
+    [$scopeSql, $scopeParams] = opportunity_visibility_condition('o');
+    $stmt = db()->prepare("SELECT COUNT(*) FROM opportunities o WHERE o.id = :id{$scopeSql}");
+    $stmt->execute($scopeParams + [':id' => $opportunityId]);
+    return (int) $stmt->fetchColumn() > 0;
 }
 
 function can_complete_task(array $task): bool

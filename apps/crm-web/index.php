@@ -210,6 +210,46 @@ function nav_icon(string $target): string
     return '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">' . $path . '</svg>';
 }
 
+function user_initials(array $user): string
+{
+    $name = trim((string) ($user['full_name'] ?? $user['username'] ?? ''));
+    $parts = preg_split('/\s+/', $name) ?: [];
+    $letters = '';
+    foreach (array_slice(array_filter($parts), 0, 2) as $part) {
+        $letters .= function_exists('mb_substr')
+            ? mb_strtoupper(mb_substr($part, 0, 1, 'UTF-8'), 'UTF-8')
+            : strtoupper(substr($part, 0, 1));
+    }
+
+    return $letters !== '' ? $letters : 'U';
+}
+
+function user_avatar_url(array $user): ?string
+{
+    $path = trim(str_replace('\\', '/', (string) ($user['avatar_path'] ?? '')));
+    if ($path === '' || !preg_match('#^data/profile-photos/[A-Za-z0-9._-]+$#', $path)) {
+        return null;
+    }
+
+    $fullPath = __DIR__ . '/' . $path;
+    if (!is_file($fullPath)) {
+        return null;
+    }
+
+    return rtrim(app_config('base_url'), '/') . '/' . $path . '?v=' . filemtime($fullPath);
+}
+
+function render_user_avatar(array $user, string $class = 'profile-avatar'): string
+{
+    $url = user_avatar_url($user);
+    $classes = preg_replace('/[^A-Za-z0-9_ -]/', '', $class) ?: 'profile-avatar';
+    if ($url !== null) {
+        return '<span class="' . e($classes) . '"><img src="' . e($url) . '" alt="' . e($user['full_name'] ?? 'Profil') . '"></span>';
+    }
+
+    return '<span class="' . e($classes) . '" aria-hidden="true">' . e(user_initials($user)) . '</span>';
+}
+
 function render_header(string $title): void
 {
     $user = current_user();
@@ -252,11 +292,24 @@ function render_header(string $title): void
                         <a class="<?= ($_GET['page'] ?? 'dashboard') === $target ? 'active' : '' ?>" href="<?= e(app_url($target)) ?>"><span class="nav-icon"><?= nav_icon($target) ?></span><span><?= e($label) ?></span></a>
                     <?php endforeach; ?>
                 </nav>
-                <div class="user-box">
-                    <strong><?= e($user['full_name']) ?></strong>
-                    <span><?= e(role_label($user['role'])) ?></span>
-                    <a href="<?= e(app_url('logout')) ?>">Çıkış</a>
-                </div>
+                <details class="user-box profile-menu">
+                    <summary>
+                        <?= render_user_avatar($user) ?>
+                        <span class="profile-summary-text">
+                            <strong><?= e($user['full_name']) ?></strong>
+                            <small><?= e(role_label($user['role'])) ?></small>
+                        </span>
+                        <span class="profile-chevron" aria-hidden="true">v</span>
+                    </summary>
+                    <div class="profile-menu-panel">
+                        <a href="<?= e(app_url('profile')) ?>">Profil ayarları</a>
+                        <a href="<?= e(app_url('profile')) ?>#password-section">Şifre değiştir</a>
+                        <form method="post" action="<?= e(app_url('logout')) ?>">
+                            <?= csrf_field() ?>
+                            <button type="submit">Çıkış</button>
+                        </form>
+                    </div>
+                </details>
             </aside>
             <main class="content">
                 <header class="topbar">
@@ -625,7 +678,114 @@ if ($page === 'sql_customer_search') {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if ($page === 'update_profile_photo') {
+        $user = current_user();
+        $file = $_FILES['avatar'] ?? null;
+        if (!$file || (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+            flash('Profil fotoğrafı seçin.', 'danger');
+            redirect_to('profile');
+        }
+        if ((int) $file['error'] !== UPLOAD_ERR_OK) {
+            flash('Profil fotoğrafı yüklenemedi. Dosya boyutunu ve formatını kontrol edin.', 'danger');
+            redirect_to('profile');
+        }
+        if ((int) ($file['size'] ?? 0) > 3 * 1024 * 1024) {
+            flash('Profil fotoğrafı en fazla 3 MB olabilir.', 'danger');
+            redirect_to('profile');
+        }
+
+        $tmpPath = (string) ($file['tmp_name'] ?? '');
+        $imageInfo = $tmpPath !== '' && is_file($tmpPath) ? @getimagesize($tmpPath) : false;
+        $mime = '';
+        if (class_exists('finfo')) {
+            $finfo = new finfo(FILEINFO_MIME_TYPE);
+            $mime = $tmpPath !== '' && is_file($tmpPath) ? (string) $finfo->file($tmpPath) : '';
+        }
+        if ($mime === '' && is_array($imageInfo) && !empty($imageInfo['mime'])) {
+            $mime = (string) $imageInfo['mime'];
+        }
+        $allowed = [
+            'image/jpeg' => 'jpg',
+            'image/png' => 'png',
+            'image/webp' => 'webp',
+        ];
+        if (!isset($allowed[$mime]) || $imageInfo === false) {
+            flash('Sadece JPG, PNG veya WebP profil fotoğrafı yükleyin.', 'danger');
+            redirect_to('profile');
+        }
+
+        $uploadDir = __DIR__ . '/data/profile-photos';
+        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+            flash('Profil fotoğrafı klasörü oluşturulamadı.', 'danger');
+            redirect_to('profile');
+        }
+
+        $filename = 'user-' . (int) $user['id'] . '-' . date('YmdHis') . '-' . bin2hex(random_bytes(4)) . '.' . $allowed[$mime];
+        $destination = $uploadDir . '/' . $filename;
+        if (!move_uploaded_file($tmpPath, $destination)) {
+            flash('Profil fotoğrafı kaydedilemedi.', 'danger');
+            redirect_to('profile');
+        }
+
+        $relativePath = 'data/profile-photos/' . $filename;
+        db()->prepare('UPDATE users SET avatar_path = :avatar_path WHERE id = :id')->execute([
+            ':avatar_path' => $relativePath,
+            ':id' => (int) $user['id'],
+        ]);
+
+        $oldPath = trim(str_replace('\\', '/', (string) ($user['avatar_path'] ?? '')));
+        $oldFullPath = __DIR__ . '/' . $oldPath;
+        if (preg_match('#^data/profile-photos/[A-Za-z0-9._-]+$#', $oldPath) && is_file($oldFullPath) && $oldFullPath !== $destination) {
+            @unlink($oldFullPath);
+        }
+
+        flash('Profil fotoğrafı güncellendi.');
+        redirect_to('profile');
+    }
+
+    if ($page === 'change_password') {
+        $user = current_user();
+        $currentPassword = (string) ($_POST['current_password'] ?? '');
+        $newPassword = (string) ($_POST['new_password'] ?? '');
+        $confirmPassword = (string) ($_POST['confirm_password'] ?? '');
+
+        if ($newPassword === '' || strlen($newPassword) < 8) {
+            flash('Yeni şifre en az 8 karakter olmalı.', 'danger');
+            redirect_to('profile');
+        }
+        if ($newPassword !== $confirmPassword) {
+            flash('Yeni şifre ve tekrar alanı aynı olmalı.', 'danger');
+            redirect_to('profile');
+        }
+        if (!password_verify($currentPassword, (string) $user['password_hash'])) {
+            flash('Mevcut şifre hatalı.', 'danger');
+            redirect_to('profile');
+        }
+
+        db()->prepare('UPDATE users SET password_hash = :password_hash WHERE id = :id')->execute([
+            ':password_hash' => password_hash($newPassword, PASSWORD_DEFAULT),
+            ':id' => (int) $user['id'],
+        ]);
+        session_regenerate_id(true);
+        $_SESSION['user_id'] = (int) $user['id'];
+        flash('Şifre güncellendi.');
+        redirect_to('profile');
+    }
+
     if ($page === 'save_task') {
+        $taskId = (int) ($_POST['id'] ?? 0);
+        $existingTask = null;
+        if ($taskId > 0 && !user_can_access_task($taskId)) {
+            http_response_code(403);
+            exit('Bu işi düzenleme yetkiniz yok.');
+        }
+        if ($taskId > 0) {
+            $existingTask = rows('SELECT * FROM tasks WHERE id = :id', [':id' => $taskId])[0] ?? null;
+            if (!$existingTask) {
+                http_response_code(404);
+                exit('İş bulunamadı.');
+            }
+        }
         $assignedTo = (int) ($_POST['assigned_to'] ?? 0);
         $validAssignee = (int) scalar('SELECT COUNT(*) FROM users WHERE id = :id AND active = 1', [':id' => $assignedTo]);
         $title = trim($_POST['title'] ?? '');
@@ -646,19 +806,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         if ($title === '' || $validAssignee === 0) {
             flash('İş başlığı ve atanacak personel zorunludur.', 'danger');
-            redirect_to('followups');
+            redirect_to('followups', $taskId > 0 ? ['edit_task' => $taskId] : []);
         }
-        db()->prepare('INSERT INTO tasks (company_id, sql_customer_id, title, description, assigned_by, assigned_to, due_date, status) VALUES (:company_id, :sql_customer_id, :title, :description, :assigned_by, :assigned_to, :due_date, :status)')->execute([
+        $status = $_POST['status'] ?? 'Açık';
+        if (!in_array($status, task_statuses(), true)) {
+            $status = 'Açık';
+        }
+        if ($taskId > 0 && $status === 'Tamamlandı' && $existingTask && !can_complete_task($existingTask)) {
+            http_response_code(403);
+            exit('Bu işi tamamlama yetkiniz yok.');
+        }
+        $data = [
             ':company_id' => $companyId,
             ':sql_customer_id' => $sqlCustomerId > 0 ? $sqlCustomerId : null,
             ':title' => $title,
             ':description' => trim($_POST['description'] ?? ''),
-            ':assigned_by' => current_user()['id'],
             ':assigned_to' => $assignedTo,
             ':due_date' => $_POST['due_date'] ?: null,
-            ':status' => 'Açık',
-        ]);
-        flash('İş atandı.');
+            ':status' => $status,
+        ];
+        if ($taskId > 0) {
+            $completedSet = $status === 'Tamamlandı' ? ', completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP)' : ', completed_at = NULL, completion_note = NULL';
+            $data[':id'] = $taskId;
+            db()->prepare("UPDATE tasks SET company_id = :company_id, sql_customer_id = :sql_customer_id, title = :title, description = :description, assigned_to = :assigned_to, due_date = :due_date, status = :status, updated_at = CURRENT_TIMESTAMP{$completedSet} WHERE id = :id")->execute($data);
+            flash('İş güncellendi.');
+        } else {
+            $data[':assigned_by'] = current_user()['id'];
+            db()->prepare('INSERT INTO tasks (company_id, sql_customer_id, title, description, assigned_by, assigned_to, due_date, status) VALUES (:company_id, :sql_customer_id, :title, :description, :assigned_by, :assigned_to, :due_date, :status)')->execute($data);
+            flash('İş atandı.');
+        }
         redirect_to('followups');
     }
 
@@ -678,6 +854,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ':id' => $taskId,
         ]);
         flash('İş tamamlandı.');
+        redirect_to('followups');
+    }
+
+    if ($page === 'delete_task') {
+        if (!can_manage_users()) {
+            http_response_code(403);
+            exit('Bu işi silme yetkiniz yok.');
+        }
+        $taskId = (int) ($_POST['id'] ?? 0);
+        db()->prepare('DELETE FROM tasks WHERE id = :id')->execute([':id' => $taskId]);
+        flash('İş silindi.');
         redirect_to('followups');
     }
 
@@ -927,7 +1114,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 http_response_code(404);
                 exit('Satış fırsatı bulunamadı.');
             }
-            if (!can_view_all() && (int) $existing['salesperson_id'] !== (int) current_user()['id']) {
+            if (!user_can_access_opportunity($id)) {
                 http_response_code(403);
                 exit('Bu satış fırsatını düzenleme yetkiniz yok.');
             }
@@ -969,6 +1156,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         redirect_to('opportunities');
     }
+
+    if ($page === 'delete_opportunity') {
+        if (!can_manage_users()) {
+            http_response_code(403);
+            exit('Bu satış fırsatını silme yetkiniz yok.');
+        }
+        $id = (int) ($_POST['id'] ?? 0);
+        db()->prepare('DELETE FROM opportunities WHERE id = :id')->execute([':id' => $id]);
+        flash('Satış fırsatı silindi.');
+        redirect_to('opportunities');
+    }
 }
 
 if ($page === 'dashboard') {
@@ -977,11 +1175,12 @@ if ($page === 'dashboard') {
     $weekStart = (new DateTimeImmutable('monday this week'))->format('Y-m-d');
     $monthStart = date('Y-m-01');
     if (can_view_all()) {
+        [$dashboardOppScopeSql, $dashboardOppScopeParams] = opportunity_visibility_condition('o');
         $weekCount = (int) scalar('SELECT COUNT(*) FROM interactions WHERE date(interaction_date) >= :week', [':week' => $weekStart]);
-        $wonAmount = (float) scalar('SELECT COALESCE(SUM(estimated_amount), 0) FROM opportunities WHERE stage = "Kazanıldı"');
-        $openAmount = (float) scalar('SELECT COALESCE(SUM(estimated_amount), 0) FROM opportunities WHERE stage NOT IN ("Kazanıldı", "Kaybedildi")');
-        $conversionWon = (int) scalar('SELECT COUNT(*) FROM opportunities WHERE stage = "Kazanıldı"');
-        $conversionClosed = (int) scalar('SELECT COUNT(*) FROM opportunities WHERE stage IN ("Kazanıldı", "Kaybedildi")');
+        $wonAmount = (float) scalar('SELECT COALESCE(SUM(o.estimated_amount), 0) FROM opportunities o WHERE o.stage = "Kazanıldı"' . $dashboardOppScopeSql, $dashboardOppScopeParams);
+        $openAmount = (float) scalar('SELECT COALESCE(SUM(o.estimated_amount), 0) FROM opportunities o WHERE o.stage NOT IN ("Kazanıldı", "Kaybedildi")' . $dashboardOppScopeSql, $dashboardOppScopeParams);
+        $conversionWon = (int) scalar('SELECT COUNT(*) FROM opportunities o WHERE o.stage = "Kazanıldı"' . $dashboardOppScopeSql, $dashboardOppScopeParams);
+        $conversionClosed = (int) scalar('SELECT COUNT(*) FROM opportunities o WHERE o.stage IN ("Kazanıldı", "Kaybedildi")' . $dashboardOppScopeSql, $dashboardOppScopeParams);
         $conversionRate = $conversionClosed > 0 ? round(($conversionWon / $conversionClosed) * 100) . '%' : '0%';
         $totalCompanyCount = company_source() === 'sqlserver'
             ? bilnex_customer_reader()->countActiveCustomers()
@@ -989,7 +1188,7 @@ if ($page === 'dashboard') {
         [$dashboardTaskScopeSql, $dashboardTaskScopeParams] = task_visibility_condition('t');
         $dashboardOpenTaskCount = scalar("SELECT COUNT(*) FROM tasks t WHERE t.status = 'Açık'{$dashboardTaskScopeSql}", $dashboardTaskScopeParams);
         $dashboardOverdueTaskCount = scalar("SELECT COUNT(*) FROM tasks t WHERE t.status = 'Açık'{$dashboardTaskScopeSql} AND t.due_date IS NOT NULL AND date(t.due_date) < :today", $dashboardTaskScopeParams + [':today' => $today]);
-        $openOpportunityCount = scalar('SELECT COUNT(*) FROM opportunities WHERE stage NOT IN ("Kazanıldı", "Kaybedildi")');
+        $openOpportunityCount = scalar('SELECT COUNT(*) FROM opportunities o WHERE o.stage NOT IN ("Kazanıldı", "Kaybedildi")' . $dashboardOppScopeSql, $dashboardOppScopeParams);
         $cards = [
             ['Bugünkü Görüşmeler', scalar('SELECT COUNT(*) FROM interactions WHERE date(interaction_date) = :today', [':today' => $today]), 'Bu hafta: ' . $weekCount, 'stat-blue'],
             ['Toplam Bayi Adayı', number_format((float) $totalCompanyCount, 0, ',', '.'), company_source() === 'sqlserver' ? 'SQL Customer kaynağı' : 'Tüm kayıtlar', 'stat-violet'],
@@ -1023,10 +1222,10 @@ if ($page === 'dashboard') {
             $statusRows = rows('SELECT status, COUNT(*) total FROM companies GROUP BY status ORDER BY total DESC');
         }
         $dashboardStatusRows = compact_metric_rows($statusRows, 'status', 'total', 6);
-        $pipeline = rows('SELECT stage, COUNT(*) total, COALESCE(SUM(estimated_amount), 0) amount FROM opportunities GROUP BY stage ORDER BY CASE stage WHEN "Yeni fırsat" THEN 1 WHEN "Görüşme yapılıyor" THEN 2 WHEN "Teklif verildi" THEN 3 WHEN "Sözleşme bekleniyor" THEN 4 WHEN "Kazanıldı" THEN 5 WHEN "Kaybedildi" THEN 6 ELSE 7 END');
+        $pipeline = rows('SELECT o.stage, COUNT(*) total, COALESCE(SUM(o.estimated_amount), 0) amount FROM opportunities o WHERE 1 = 1' . $dashboardOppScopeSql . ' GROUP BY o.stage ORDER BY CASE o.stage WHEN "Yeni fırsat" THEN 1 WHEN "Görüşme yapılıyor" THEN 2 WHEN "Teklif verildi" THEN 3 WHEN "Sözleşme bekleniyor" THEN 4 WHEN "Kazanıldı" THEN 5 WHEN "Kaybedildi" THEN 6 ELSE 7 END', $dashboardOppScopeParams);
         $trend = rows('SELECT date(interaction_date) day, COUNT(*) total FROM interactions WHERE date(interaction_date) >= date(:today, "-6 day") GROUP BY date(interaction_date) ORDER BY day', [':today' => $today]);
         $overdueRows = rows('SELECT c.id, c.name, c.next_followup_date, u.full_name responsible_name FROM companies c LEFT JOIN users u ON u.id = c.responsible_user_id WHERE c.next_followup_date IS NOT NULL AND date(c.next_followup_date) < :today ORDER BY c.next_followup_date ASC LIMIT 8', [':today' => $today]);
-        $openOpps = rows('SELECT o.id, o.product_service, o.estimated_amount, o.stage, o.expected_close_date, c.name company_name, u.full_name salesperson_name FROM opportunities o JOIN companies c ON c.id = o.company_id LEFT JOIN users u ON u.id = o.salesperson_id WHERE o.stage NOT IN ("Kazanıldı", "Kaybedildi") ORDER BY o.estimated_amount DESC LIMIT 8');
+        $openOpps = rows('SELECT o.id, o.product_service, o.estimated_amount, o.stage, o.expected_close_date, c.name company_name, u.full_name salesperson_name FROM opportunities o JOIN companies c ON c.id = o.company_id LEFT JOIN users u ON u.id = o.salesperson_id WHERE o.stage NOT IN ("Kazanıldı", "Kaybedildi")' . $dashboardOppScopeSql . ' ORDER BY o.estimated_amount DESC LIMIT 8', $dashboardOppScopeParams);
 
         echo '<section class="dashboard-grid dashboard-main-grid">';
         echo '<article class="panel chart-panel"><div class="section-title"><h2>Görüşme Trendi</h2><a class="btn small" href="' . e(app_url('reports', ['date_filter' => 'week'])) . '">Son 7 gün</a></div>';
@@ -1167,6 +1366,57 @@ if ($page === 'dashboard') {
         }
         echo '</tbody></table></div></section>';
     }
+    render_footer();
+    exit;
+}
+
+if ($page === 'profile') {
+    $user = current_user();
+    render_header('Profil Ayarları');
+    ?>
+    <section class="panel profile-hero">
+        <?= render_user_avatar($user, 'profile-avatar large') ?>
+        <div>
+            <h2><?= e($user['full_name']) ?></h2>
+            <p class="muted"><?= e($user['username']) ?> · <?= e(role_label($user['role'])) ?></p>
+        </div>
+    </section>
+    <section class="grid-two profile-settings-grid">
+        <form class="panel stack" method="post" action="<?= e(app_url('update_profile_photo')) ?>" enctype="multipart/form-data">
+            <div>
+                <h2>Profil Fotoğrafı</h2>
+                <p class="muted">JPG, PNG veya WebP formatında, en fazla 3 MB fotoğraf yükleyin.</p>
+            </div>
+            <?= csrf_field() ?>
+            <label>Fotoğraf seç
+                <input type="file" name="avatar" accept="image/jpeg,image/png,image/webp" required>
+            </label>
+            <button class="btn primary" type="submit">Fotoğrafı kaydet</button>
+        </form>
+
+        <form class="panel stack" id="password-section" method="post" action="<?= e(app_url('change_password')) ?>">
+            <div>
+                <h2>Şifre Değiştir</h2>
+                <p class="muted">Şifre değişikliğinden sonra mevcut oturumunuz açık kalır.</p>
+            </div>
+            <?= csrf_field() ?>
+            <label>Mevcut şifre <input name="current_password" type="password" autocomplete="current-password" required></label>
+            <label>Yeni şifre <input name="new_password" type="password" autocomplete="new-password" minlength="8" required></label>
+            <label>Yeni şifre tekrar <input name="confirm_password" type="password" autocomplete="new-password" minlength="8" required></label>
+            <button class="btn primary" type="submit">Şifreyi güncelle</button>
+        </form>
+    </section>
+    <section class="panel profile-session">
+        <div>
+            <h2>Oturum</h2>
+            <p class="muted">Bu cihazdaki CRM oturumunu güvenli şekilde kapatır.</p>
+        </div>
+        <form method="post" action="<?= e(app_url('logout')) ?>">
+            <?= csrf_field() ?>
+            <button class="btn danger" type="submit">Çıkış yap</button>
+        </form>
+    </section>
+    <?php
     render_footer();
     exit;
 }
@@ -1500,7 +1750,8 @@ if ($page === 'company_view') {
     $usesSqlCustomerWrite = company_source() === 'sqlserver';
     render_header($company['name']);
     $interactions = rows('SELECT i.*, u.full_name user_name FROM interactions i LEFT JOIN users u ON u.id = i.user_id WHERE i.company_id = :id ORDER BY i.interaction_date DESC, i.created_at DESC', [':id' => $id]);
-    $opps = rows('SELECT o.*, u.full_name salesperson_name FROM opportunities o LEFT JOIN users u ON u.id = o.salesperson_id WHERE o.company_id = :id ORDER BY o.updated_at DESC', [':id' => $id]);
+    [$companyOppScopeSql, $companyOppScopeParams] = opportunity_visibility_condition('o');
+    $opps = rows('SELECT o.*, u.full_name salesperson_name FROM opportunities o LEFT JOIN users u ON u.id = o.salesperson_id WHERE o.company_id = :id' . $companyOppScopeSql . ' ORDER BY o.updated_at DESC', $companyOppScopeParams + [':id' => $id]);
     ?>
     <section class="detail-head">
         <div>
@@ -1651,6 +1902,19 @@ if ($page === 'followups') {
         $taskCompanyParams += $taskCompanyScopeParams;
         $taskCompanies = rows("SELECT c.id, c.name, c.account_code, c.account_type, c.sql_customer_id FROM companies c {$taskCompanyWhere} ORDER BY c.name LIMIT 300", $taskCompanyParams);
     }
+    $editTaskId = (int) ($_GET['edit_task'] ?? 0);
+    $editTask = null;
+    if ($editTaskId > 0) {
+        if (!user_can_access_task($editTaskId)) {
+            http_response_code(403);
+            exit('Bu işi düzenleme yetkiniz yok.');
+        }
+        $editTask = rows('SELECT t.*, c.name company_name, c.account_code company_account_code FROM tasks t LEFT JOIN companies c ON c.id = t.company_id WHERE t.id = :id', [':id' => $editTaskId])[0] ?? null;
+        if (!$editTask) {
+            http_response_code(404);
+            exit('İş bulunamadı.');
+        }
+    }
 
     [$taskScopeSql, $taskScopeParams] = task_visibility_condition('t');
     $scopeWhere = ' WHERE 1 = 1' . $taskScopeSql;
@@ -1678,25 +1942,26 @@ if ($page === 'followups') {
     <section class="grid-two task-workspace">
         <form class="panel form-grid task-create-panel" method="post" action="<?= e(app_url('save_task')) ?>">
             <div class="wide section-title compact-title">
-                <h2>Takip gir / iş ata</h2>
-                <span class="muted">Herkes herkese iş atayabilir.</span>
+                <h2><?= $editTask ? 'İşi düzenle' : 'Takip gir / iş ata' ?></h2>
+                <span class="muted"><?= $editTask ? 'Başlık, atanan kişi, termin ve durumu güncelle.' : 'Herkes herkese iş atayabilir.' ?></span>
             </div>
             <?= csrf_field() ?>
-            <label>İş konusu <input name="title" required placeholder="Örn. Bayi evraklarını kontrol et"></label>
+            <input type="hidden" name="id" value="<?= e($editTask['id'] ?? 0) ?>">
+            <label>İş konusu <input name="title" value="<?= e($editTask['title'] ?? '') ?>" required placeholder="Örn. Bayi evraklarını kontrol et"></label>
             <label>Atanacak kişi
                 <select name="assigned_to" required>
                     <?php foreach ($taskUsers as $user): ?>
-                        <option value="<?= e($user['id']) ?>"<?= selected($currentUserId, $user['id']) ?>><?= e($user['full_name']) ?> · <?= e(role_label($user['role'])) ?></option>
+                        <option value="<?= e($user['id']) ?>"<?= selected($editTask['assigned_to'] ?? $currentUserId, $user['id']) ?>><?= e($user['full_name']) ?> · <?= e(role_label($user['role'])) ?></option>
                     <?php endforeach; ?>
                 </select>
             </label>
-            <label>Termin tarihi <input type="date" name="due_date"></label>
+            <label>Termin tarihi <input type="date" name="due_date" value="<?= e($editTask['due_date'] ?? '') ?>"></label>
             <?php if ($usingSqlCustomerPicker): ?>
                 <label class="wide">İlgili cari <small class="muted">Opsiyonel</small>
-                    <input type="hidden" name="company_id" value="">
-                    <input type="hidden" name="sql_customer_id" data-sql-customer-id>
+                    <input type="hidden" name="company_id" value="<?= e($editTask['company_id'] ?? '') ?>">
+                    <input type="hidden" name="sql_customer_id" value="<?= e($editTask['sql_customer_id'] ?? '') ?>" data-sql-customer-id>
                     <div class="sql-customer-picker" data-sql-customer-picker>
-                        <button class="lookup-button" type="button" data-open-sql-customer-picker><span data-sql-customer-label>Cari seçmeden de kaydedebilirsiniz</span></button>
+                        <button class="lookup-button" type="button" data-open-sql-customer-picker><span data-sql-customer-label><?= e(!empty($editTask['company_name']) ? (($editTask['company_account_code'] ?? '') ? $editTask['company_account_code'] . ' - ' : '') . $editTask['company_name'] : (!empty($editTask['sql_customer_id']) ? 'SQL #' . $editTask['sql_customer_id'] : 'Cari seçmeden de kaydedebilirsiniz')) ?></span></button>
                         <button class="btn small" type="button" data-clear-sql-customer>Temizle</button>
                     </div>
                 </label>
@@ -1705,13 +1970,25 @@ if ($page === 'followups') {
                     <select name="company_id">
                         <option value="">Bağlantı yok</option>
                         <?php foreach ($taskCompanies as $company): ?>
-                            <option value="<?= e($company['id']) ?>"><?= e(company_lookup_label($company)) ?><?= $company['sql_customer_id'] ? ' · SQL #' . e($company['sql_customer_id']) : '' ?></option>
+                            <option value="<?= e($company['id']) ?>"<?= selected($editTask['company_id'] ?? '', $company['id']) ?>><?= e(company_lookup_label($company)) ?><?= $company['sql_customer_id'] ? ' · SQL #' . e($company['sql_customer_id']) : '' ?></option>
                         <?php endforeach; ?>
                     </select>
                 </label>
             <?php endif; ?>
-            <label class="wide">Açıklama <textarea name="description" placeholder="Beklenen aksiyon, not veya takip detayı"></textarea></label>
-            <div class="actions wide"><button class="btn primary" type="submit">Kaydet ve ata</button></div>
+            <?php if ($editTask): ?>
+                <label>Durum
+                    <select name="status">
+                        <?php foreach (task_statuses() as $status): ?>
+                            <option value="<?= e($status) ?>"<?= selected($editTask['status'], $status) ?>><?= e($status) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+            <?php endif; ?>
+            <label class="wide">Açıklama <textarea name="description" placeholder="Beklenen aksiyon, not veya takip detayı"><?= e($editTask['description'] ?? '') ?></textarea></label>
+            <div class="actions wide">
+                <?php if ($editTask): ?><a class="btn" href="<?= e(app_url('followups')) ?>">Yeni takip gir</a><?php endif; ?>
+                <button class="btn primary" type="submit"><?= $editTask ? 'İşi güncelle' : 'Kaydet ve ata' ?></button>
+            </div>
         </form>
 
         <article class="panel task-rules-panel">
@@ -1811,6 +2088,7 @@ if ($page === 'followups') {
                     </div>
                     <div class="task-card-actions">
                         <?php if ($isOverdue): ?><span class="badge danger">Gecikmiş</span><?php endif; ?>
+                        <a class="btn small" href="<?= e(app_url('followups', ['edit_task' => $row['id']])) ?>">Düzenle</a>
                         <?php if ($row['status'] !== 'Tamamlandı' && can_complete_task($row)): ?>
                             <form method="post" action="<?= e(app_url('complete_task')) ?>" class="inline-form task-complete-form">
                                 <?= csrf_field() ?>
@@ -1823,6 +2101,13 @@ if ($page === 'followups') {
                             <?php if (!empty($row['completion_note'])): ?><small><?= e($row['completion_note']) ?></small><?php endif; ?>
                         <?php else: ?>
                             <span class="muted">Tamamlama yetkisi atanan kişide.</span>
+                        <?php endif; ?>
+                        <?php if (can_manage_users()): ?>
+                            <form method="post" action="<?= e(app_url('delete_task')) ?>" class="inline-form delete-form" data-confirm="Bu iş silinsin mi?">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="id" value="<?= e($row['id']) ?>">
+                                <button class="btn small danger" type="submit">Sil</button>
+                            </form>
                         <?php endif; ?>
                     </div>
                 </article>
@@ -2125,10 +2410,9 @@ if ($page === 'opportunities') {
     render_header('Satış Fırsatları');
     $where = ' WHERE 1 = 1';
     $params = [];
-    if (!can_view_all()) {
-        $where .= ' AND o.salesperson_id = :uid';
-        $params[':uid'] = current_user()['id'];
-    }
+    [$opportunityScopeSql, $opportunityScopeParams] = opportunity_visibility_condition('o');
+    $where .= $opportunityScopeSql;
+    $params += $opportunityScopeParams;
     if (!empty($_GET['q'])) {
         $where .= ' AND (c.name LIKE :q OR o.product_service LIKE :q OR o.note LIKE :q)';
         $params[':q'] = '%' . $_GET['q'] . '%';
@@ -2179,7 +2463,7 @@ if ($page === 'opportunities') {
     </section>
     <section class="panel">
         <div class="table-wrap"><table class="opportunities-table" id="opportunities-table">
-            <thead><tr><th>Cari</th><th>Cari türü</th><th>SQL Customer</th><th>Satışçı</th><th>Ürün / hizmet</th><th>Tutar</th><th>Aşama</th><th>Kapanış</th><th></th></tr></thead>
+            <thead><tr><th>Cari</th><th>Cari türü</th><th>SQL Customer</th><th>Satışçı</th><th>Ürün / hizmet</th><th>Tutar</th><th>Aşama</th><th>Kapanış</th><th>Aksiyon</th></tr></thead>
             <tbody>
             <?php foreach ($items as $row): ?>
                 <tr>
@@ -2191,7 +2475,16 @@ if ($page === 'opportunities') {
                     <td><?= e(money($row['estimated_amount'])) ?></td>
                     <td><?= e($row['stage']) ?></td>
                     <td><?= e($row['expected_close_date']) ?></td>
-                    <td><a class="btn small" href="<?= e(app_url('opportunity_form', ['id' => $row['id']])) ?>">Düzenle</a></td>
+                    <td class="actions-cell">
+                        <a class="btn small" href="<?= e(app_url('opportunity_form', ['id' => $row['id']])) ?>">Düzenle</a>
+                        <?php if (can_manage_users()): ?>
+                            <form method="post" action="<?= e(app_url('delete_opportunity')) ?>" class="inline-form delete-form" data-confirm="Bu satış fırsatı silinsin mi?">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="id" value="<?= e($row['id']) ?>">
+                                <button class="btn small danger" type="submit">Sil</button>
+                            </form>
+                        <?php endif; ?>
+                    </td>
                 </tr>
             <?php endforeach; ?>
             </tbody>
@@ -2208,7 +2501,7 @@ if ($page === 'opportunity_form') {
     if ($id > 0) {
         $opp = rows('SELECT * FROM opportunities WHERE id = :id', [':id' => $id])[0] ?? null;
         if ($opp) {
-            if (!can_view_all() && (int) $opp['salesperson_id'] !== (int) current_user()['id']) {
+            if (!user_can_access_opportunity($id)) {
                 http_response_code(403);
                 exit('Bu satış fırsatını düzenleme yetkiniz yok.');
             }
@@ -2326,11 +2619,9 @@ if ($page === 'reports') {
     $statusReport = rows("SELECT c.status, COUNT(*) total FROM companies c {$companyScope} GROUP BY c.status ORDER BY total DESC", $companyParams);
     $typeReport = rows("SELECT c.account_type, COUNT(*) total FROM companies c {$companyScope} GROUP BY c.account_type ORDER BY total DESC", $companyParams);
     $oppWhere = ' WHERE 1 = 1';
-    $oppParams = [];
-    if (!can_view_all()) {
-        $oppWhere .= ' AND o.salesperson_id = :uid';
-        $oppParams[':uid'] = current_user()['id'];
-    }
+    [$reportOppScopeSql, $reportOppScopeParams] = opportunity_visibility_condition('o');
+    $oppWhere .= $reportOppScopeSql;
+    $oppParams = $reportOppScopeParams;
     if ($selectedAccountType !== '') {
         $oppWhere .= ' AND EXISTS (SELECT 1 FROM companies c WHERE c.id = o.company_id AND c.account_type = :opp_account_type)';
         $oppParams[':opp_account_type'] = $selectedAccountType;
