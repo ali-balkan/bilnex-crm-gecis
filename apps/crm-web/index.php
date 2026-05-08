@@ -1120,13 +1120,16 @@ if ($page === 'companies') {
     filter_bar('companies', $extras);
     $usingSqlServerCompanies = company_source() === 'sqlserver';
     $sqlCustomerReader = $usingSqlServerCompanies ? bilnex_customer_reader() : null;
+    $sqlCustomerTypeId = $usingSqlServerCompanies && !empty($_GET['account_type'])
+        ? company_account_type_sql_id($_GET['account_type'])
+        : null;
     $companies = $usingSqlServerCompanies
-        ? sql_customer_rows_for_company_list()
+        ? sql_customer_rows_for_company_list(250, $sqlCustomerTypeId)
         : rows("SELECT c.*, u.full_name responsible_name FROM companies c LEFT JOIN users u ON u.id = c.responsible_user_id {$where} ORDER BY c.updated_at DESC", $params);
     $sqlCustomerReadError = $sqlCustomerReader instanceof CustomerReadRepository ? $sqlCustomerReader->lastError() : null;
     $companyTotal = count($companies);
     if ($usingSqlServerCompanies && !$sqlCustomerReadError && $sqlCustomerReader instanceof CustomerReadRepository) {
-        $activeCustomerTotal = $sqlCustomerReader->countActiveCustomers();
+        $activeCustomerTotal = $sqlCustomerReader->countActiveCustomers($sqlCustomerTypeId);
         $sqlCustomerReadError = $sqlCustomerReader->lastError();
         if (!$sqlCustomerReadError) {
             $companyTotal = $activeCustomerTotal;

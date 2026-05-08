@@ -87,18 +87,12 @@ function company_source(): string
 
 function sql_customer_type_label(int $customerTypeId): string
 {
-    return match ($customerTypeId) {
-        7 => 'Ä°ÅŸ OrtaÄŸÄ±',
-        14 => 'Hedef Bayi',
-        16 => 'Son KullanÄ±cÄ±',
-        17 => 'Hedef MÃ¼ÅŸteri',
-        default => 'MÃ¼ÅŸteri',
-    };
+    return company_account_type_by_sql_id($customerTypeId) ?? 'Müşteri';
 }
 
-function sql_customer_rows_for_company_list(int $limit = 250): array
+function sql_customer_rows_for_company_list(int $limit = 250, ?int $customerTypeId = null): array
 {
-    $items = bilnex_customer_reader()->findActiveCustomers($limit);
+    $items = bilnex_customer_reader()->findActiveCustomers($limit, $customerTypeId);
 
     return array_map(static function (array $row): array {
         return [
@@ -397,7 +391,44 @@ function company_statuses(): array
 
 function company_account_types(): array
 {
-    return ['Ä°ÅŸ OrtaÄŸÄ±', 'Son KullanÄ±cÄ±'];
+    return array_values(company_account_type_sql_ids());
+}
+
+function company_account_type_sql_ids(): array
+{
+    return [
+        1 => 'Bilnex',
+        2 => 'Yönetici',
+        3 => 'Satış',
+        4 => 'Destek',
+        5 => 'Yazılım',
+        6 => 'Muhasebe',
+        7 => 'İş Ortakları',
+        8 => 'Distribütör',
+        9 => 'Dağıtıcı',
+        10 => 'Bölge Bayisi',
+        11 => 'Çözüm Ortağı',
+        12 => 'Yetkili Satıcı',
+        13 => 'Satış Noktası',
+        14 => 'Hedef Bayi',
+        15 => 'Müşteriler',
+        16 => 'Müşteri',
+        17 => 'Hedef Müşteri',
+        18 => 'Demo Müşteri',
+    ];
+}
+
+function company_account_type_by_sql_id(int $customerTypeId): ?string
+{
+    $types = company_account_type_sql_ids();
+    return $types[$customerTypeId] ?? null;
+}
+
+function company_account_type_sql_id(?string $value): ?int
+{
+    $normalized = normalize_company_account_type($value);
+    $id = array_search($normalized, company_account_type_sql_ids(), true);
+    return $id === false ? null : (int) $id;
 }
 
 function normalize_company_account_type(?string $value): string
@@ -409,6 +440,18 @@ function normalize_company_account_type(?string $value): string
 
     $key = strtolower($value);
     $key = strtr($key, [
+        'ı' => 'i',
+        'İ' => 'i',
+        'ş' => 's',
+        'Ş' => 's',
+        'ğ' => 'g',
+        'Ğ' => 'g',
+        'ü' => 'u',
+        'Ü' => 'u',
+        'ö' => 'o',
+        'Ö' => 'o',
+        'ç' => 'c',
+        'Ç' => 'c',
         'Ä±' => 'i',
         'Ä°' => 'i',
         'ÅŸ' => 's',
@@ -424,9 +467,33 @@ function normalize_company_account_type(?string $value): string
     ]);
     $key = preg_replace('/[^a-z0-9]+/', '', $key) ?? '';
 
-    return in_array($key, ['sonkullanici', 'sonkullaniciadayi', 'musteri', 'nihaituketici'], true)
-        ? 'Son KullanÄ±cÄ±'
-        : 'Ä°ÅŸ OrtaÄŸÄ±';
+    $aliases = [
+        'bilnex' => 'Bilnex',
+        'yonetici' => 'Yönetici',
+        'satis' => 'Satış',
+        'destek' => 'Destek',
+        'yazilim' => 'Yazılım',
+        'muhasebe' => 'Muhasebe',
+        'isortagi' => 'İş Ortakları',
+        'isortaklari' => 'İş Ortakları',
+        'bayi' => 'İş Ortakları',
+        'distributor' => 'Distribütör',
+        'dagitici' => 'Dağıtıcı',
+        'bolgebayisi' => 'Bölge Bayisi',
+        'cozumortagi' => 'Çözüm Ortağı',
+        'yetkilisatici' => 'Yetkili Satıcı',
+        'satisnoktasi' => 'Satış Noktası',
+        'hedefbayi' => 'Hedef Bayi',
+        'musteriler' => 'Müşteriler',
+        'sonkullanici' => 'Müşteri',
+        'sonkullaniciadayi' => 'Hedef Müşteri',
+        'musteri' => 'Müşteri',
+        'nihaituketici' => 'Müşteri',
+        'hedefmusteri' => 'Hedef Müşteri',
+        'demomusteri' => 'Demo Müşteri',
+    ];
+
+    return $aliases[$key] ?? 'Müşteri';
 }
 
 function interaction_types(): array

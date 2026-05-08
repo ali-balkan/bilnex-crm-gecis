@@ -8,9 +8,11 @@ final class CustomerReadRepository
     {
     }
 
-    public function findActiveCustomers(int $limit = 100): array
+    public function findActiveCustomers(int $limit = 100, ?int $customerTypeId = null): array
     {
         $limit = max(1, min($limit, 500));
+        $customerTypeId = $customerTypeId !== null ? max(1, $customerTypeId) : null;
+        $typeWhere = $customerTypeId !== null ? " AND c.CustomerTypeId = {$customerTypeId}" : '';
 
         return $this->safeFetchAll("
             SELECT TOP ($limit)
@@ -34,17 +36,19 @@ final class CustomerReadRepository
                 c.Code,
                 c.RepresentativeId
             FROM dbo.Customer c
-            WHERE ISNULL(c.isDeleted, 0) = 0
+            WHERE ISNULL(c.isDeleted, 0) = 0{$typeWhere}
             ORDER BY c.Id DESC
         ");
     }
 
-    public function countActiveCustomers(): int
+    public function countActiveCustomers(?int $customerTypeId = null): int
     {
+        $customerTypeId = $customerTypeId !== null ? max(1, $customerTypeId) : null;
+        $typeWhere = $customerTypeId !== null ? " AND c.CustomerTypeId = {$customerTypeId}" : '';
         $row = $this->safeFetchOne("
             SELECT COUNT(*) AS total
             FROM dbo.Customer c
-            WHERE ISNULL(c.isDeleted, 0) = 0
+            WHERE ISNULL(c.isDeleted, 0) = 0{$typeWhere}
         ");
 
         return (int) ($row['total'] ?? 0);
