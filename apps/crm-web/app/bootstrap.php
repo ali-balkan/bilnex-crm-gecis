@@ -118,6 +118,27 @@ function sql_customer_rows_for_company_list(int $limit = 250, ?int $customerType
     }, $items);
 }
 
+function display_phone(?string $value): string
+{
+    $value = trim((string) $value);
+    if ($value === '') {
+        return '';
+    }
+
+    $digits = preg_replace('/\D+/', '', $value) ?? '';
+    if (strlen($digits) < 7 || strlen($digits) > 15) {
+        return '';
+    }
+
+    return preg_match('/^\+?[0-9\s().-]+$/', $value) ? $value : '';
+}
+
+function display_tax_no(?string $value): string
+{
+    $digits = preg_replace('/\D+/', '', (string) $value) ?? '';
+    return in_array(strlen($digits), [10, 11], true) ? $digits : '';
+}
+
 function sql_customer_row_to_company_row(array $row): array
 {
     $address = trim(implode(' ', array_filter([
@@ -132,12 +153,12 @@ function sql_customer_row_to_company_row(array $row): array
         'name' => $row['Name1'] ?? '',
         'account_type' => sql_customer_type_label((int) ($row['CustomerTypeId'] ?? 0)),
         'contact_person' => $row['Name2'] ?? '',
-        'phone' => $row['Phone'] ?? '',
+        'phone' => display_phone($row['Phone'] ?? ''),
         'email' => $row['Email'] ?? '',
         'city' => $row['City'] ?? '',
         'district' => $row['District'] ?? '',
         'address' => $address,
-        'tax_no' => $row['TaxNumber'] ?? '',
+        'tax_no' => display_tax_no($row['TaxNumber'] ?? ''),
         'status' => !empty($row['isActive']) ? 'Aktif' : 'Pasif',
         'responsible_name' => '',
         'next_followup_date' => '',
