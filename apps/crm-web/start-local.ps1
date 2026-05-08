@@ -18,6 +18,7 @@ $env:CRM_BASE_URL = ""
     -d "extension_dir=$phpDir\ext" `
     -d "extension=pdo_sqlite" `
     -d "extension=sqlite3" `
+    -d "extension=gd" `
     -d "extension=zip" `
     -S 127.0.0.1:8001 `
     -t $PSScriptRoot

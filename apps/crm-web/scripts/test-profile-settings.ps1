@@ -18,7 +18,7 @@ function Php($code) {
     [System.IO.File]::WriteAllText($snippet, "<?php`n" + $code, $utf8NoBom)
     Push-Location $webRoot
     try {
-        & $phpExe -d "extension_dir=$phpDir\ext" -d "extension=pdo_sqlite" -d "extension=sqlite3" $snippet
+        & $phpExe -d "extension_dir=$phpDir\ext" -d "extension=pdo_sqlite" -d "extension=sqlite3" -d "extension=gd" $snippet
     } finally {
         Pop-Location
         Remove-Item -LiteralPath $snippet -ErrorAction SilentlyContinue
@@ -115,7 +115,7 @@ if (!(Test-Path $phpExe)) {
 Push-Location $webRoot
 try {
     $env:CRM_COMPANY_SOURCE = "sqlite"
-    & $phpExe -d "extension_dir=$phpDir\ext" -d "extension=pdo_sqlite" -d "extension=sqlite3" scripts\seed-test-data.php | Out-Null
+        & $phpExe -d "extension_dir=$phpDir\ext" -d "extension=pdo_sqlite" -d "extension=sqlite3" -d "extension=gd" scripts\seed-test-data.php | Out-Null
     $existingAvatar = Php-Text "require 'app/bootstrap.php'; echo (string) db()->query(""SELECT avatar_path FROM users WHERE username = 'test_admin'"")->fetchColumn();"
     if ($existingAvatar) {
         Remove-Item -LiteralPath (Join-Path $webRoot $existingAvatar) -ErrorAction SilentlyContinue
@@ -135,7 +135,7 @@ $server = Start-Job -ArgumentList $phpExe, $phpDir, $webRoot -ScriptBlock {
     Set-Location $webRoot
     $env:CRM_BASE_URL = ""
     $env:CRM_COMPANY_SOURCE = "sqlite"
-    & $phpExe -d "extension_dir=$phpDir\ext" -d "extension=pdo_sqlite" -d "extension=sqlite3" -S 127.0.0.1:8011 -t $webRoot
+    & $phpExe -d "extension_dir=$phpDir\ext" -d "extension=pdo_sqlite" -d "extension=sqlite3" -d "extension=gd" -S 127.0.0.1:8011 -t $webRoot
 }
 
 $avatarPath = ""
@@ -183,7 +183,15 @@ try {
     Login "test_admin" "Test123!admin" | Out-Null
     Assert-True $true "password reset works"
 
-    [Convert]::FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=") | Set-Content -Path $tempImage -Encoding Byte
+    Php @"
+`$image = imagecreatetruecolor(1400, 700);
+`$blue = imagecolorallocate(`$image, 0, 132, 221);
+`$orange = imagecolorallocate(`$image, 240, 90, 48);
+imagefilledrectangle(`$image, 0, 0, 1399, 699, `$blue);
+imagefilledellipse(`$image, 700, 350, 620, 620, `$orange);
+imagepng(`$image, '$($tempImage.Replace('\', '/'))');
+imagedestroy(`$image);
+"@ | Out-Null
     $session = Login "test_admin" "Test123!admin"
     $profile = Invoke-WebRequest -Uri "$base/index.php?page=profile" -WebSession $session -UseBasicParsing
     $token = Extract-Token $profile.Content
@@ -195,6 +203,15 @@ try {
     $avatarPath = Php-Text "require 'app/bootstrap.php'; echo (string) db()->query(""SELECT avatar_path FROM users WHERE username = 'test_admin'"")->fetchColumn();"
     Assert-True ($avatarPath -like "data/profile-photos/user-*") "avatar path saved"
     Assert-True (Test-Path (Join-Path $webRoot $avatarPath)) "avatar file exists"
+    $avatarMeta = Php-Text @"
+require 'app/bootstrap.php';
+`$path = dirname(__DIR__) . '/' . db()->query("SELECT avatar_path FROM users WHERE username = 'test_admin'")->fetchColumn();
+`$info = getimagesize(`$path);
+echo `$info[0] . 'x' . `$info[1] . '|' . `$info['mime'] . '|' . filesize(`$path);
+"@
+    $avatarParts = $avatarMeta.Split('|')
+    Assert-True ($avatarParts[0] -eq "256x256" -and $avatarParts[1] -eq "image/jpeg") "avatar is resized to 256x256 JPEG"
+    Assert-True ([int]$avatarParts[2] -lt 70000) "resized avatar file stays small"
 
     $logoutProfile = Invoke-WebRequest -Uri "$base/index.php?page=profile" -WebSession $session -UseBasicParsing
     $logoutToken = Extract-Token $logoutProfile.Content

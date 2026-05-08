@@ -250,6 +250,65 @@ function render_user_avatar(array $user, string $class = 'profile-avatar'): stri
     return '<span class="' . e($classes) . '" aria-hidden="true">' . e(user_initials($user)) . '</span>';
 }
 
+function save_standard_profile_avatar(string $sourcePath, string $destinationPath): void
+{
+    if (!function_exists('imagecreatefromstring') || !function_exists('imagejpeg')) {
+        throw new RuntimeException('Sunucuda görsel küçültme desteği eksik. GD eklentisi gerekli.');
+    }
+
+    $bytes = file_get_contents($sourcePath);
+    if ($bytes === false) {
+        throw new RuntimeException('Profil fotoğrafı okunamadı.');
+    }
+
+    $source = @imagecreatefromstring($bytes);
+    if (!$source) {
+        throw new RuntimeException('Profil fotoğrafı işlenemedi.');
+    }
+
+    if (function_exists('exif_read_data')) {
+        $exif = @exif_read_data($sourcePath);
+        $orientation = (int) ($exif['Orientation'] ?? 1);
+        if (in_array($orientation, [3, 6, 8], true)) {
+            $angle = $orientation === 3 ? 180 : ($orientation === 6 ? 270 : 90);
+            $rotated = imagerotate($source, $angle, 0);
+            if ($rotated) {
+                imagedestroy($source);
+                $source = $rotated;
+            }
+        }
+    }
+
+    $sourceWidth = imagesx($source);
+    $sourceHeight = imagesy($source);
+    if ($sourceWidth <= 0 || $sourceHeight <= 0) {
+        imagedestroy($source);
+        throw new RuntimeException('Profil fotoğrafı ölçüleri okunamadı.');
+    }
+
+    $size = 256;
+    $cropSize = min($sourceWidth, $sourceHeight);
+    $sourceX = (int) floor(($sourceWidth - $cropSize) / 2);
+    $sourceY = (int) floor(($sourceHeight - $cropSize) / 2);
+
+    $avatar = imagecreatetruecolor($size, $size);
+    if (!$avatar) {
+        imagedestroy($source);
+        throw new RuntimeException('Profil fotoğrafı hazırlanamadı.');
+    }
+    $background = imagecolorallocate($avatar, 255, 255, 255);
+    imagefilledrectangle($avatar, 0, 0, $size, $size, $background);
+    imagecopyresampled($avatar, $source, 0, 0, $sourceX, $sourceY, $size, $size, $cropSize, $cropSize);
+
+    $saved = imagejpeg($avatar, $destinationPath, 82);
+    imagedestroy($avatar);
+    imagedestroy($source);
+
+    if (!$saved) {
+        throw new RuntimeException('Profil fotoğrafı küçültülmüş olarak kaydedilemedi.');
+    }
+}
+
 function render_header(string $title): void
 {
     $user = current_user();
@@ -689,8 +748,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('Profil fotoğrafı yüklenemedi. Dosya boyutunu ve formatını kontrol edin.', 'danger');
             redirect_to('profile');
         }
-        if ((int) ($file['size'] ?? 0) > 3 * 1024 * 1024) {
-            flash('Profil fotoğrafı en fazla 3 MB olabilir.', 'danger');
+        if ((int) ($file['size'] ?? 0) > 20 * 1024 * 1024) {
+            flash('Profil fotoğrafı en fazla 20 MB olabilir. Yüklenen fotoğraf otomatik küçültülür.', 'danger');
             redirect_to('profile');
         }
 
@@ -720,10 +779,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect_to('profile');
         }
 
-        $filename = 'user-' . (int) $user['id'] . '-' . date('YmdHis') . '-' . bin2hex(random_bytes(4)) . '.' . $allowed[$mime];
+        $filename = 'user-' . (int) $user['id'] . '-' . date('YmdHis') . '-' . bin2hex(random_bytes(4)) . '.jpg';
         $destination = $uploadDir . '/' . $filename;
-        if (!move_uploaded_file($tmpPath, $destination)) {
-            flash('Profil fotoğrafı kaydedilemedi.', 'danger');
+        try {
+            save_standard_profile_avatar($tmpPath, $destination);
+        } catch (Throwable $exception) {
+            if (is_file($destination)) {
+                @unlink($destination);
+            }
+            flash($exception->getMessage(), 'danger');
             redirect_to('profile');
         }
 
@@ -739,7 +803,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             @unlink($oldFullPath);
         }
 
-        flash('Profil fotoğrafı güncellendi.');
+        flash('Profil fotoğrafı 256x256 piksel standart boyuta küçültülerek güncellendi.');
         redirect_to('profile');
     }
 
@@ -1391,7 +1455,7 @@ if ($page === 'profile') {
         <form class="panel stack" method="post" action="<?= e(app_url('update_profile_photo')) ?>" enctype="multipart/form-data">
             <div>
                 <h2>Profil Fotoğrafı</h2>
-                <p class="muted">JPG, PNG veya WebP formatında, en fazla 3 MB fotoğraf yükleyin.</p>
+                <p class="muted">JPG, PNG veya WebP yükleyin. Fotoğraf otomatik 256x256 piksel standart avatar olarak küçültülür.</p>
             </div>
             <?= csrf_field() ?>
             <label>Fotoğraf seç
