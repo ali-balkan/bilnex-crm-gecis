@@ -586,84 +586,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($page === 'import_companies') {
-        if (empty($_FILES['company_file']) || ($_FILES['company_file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
-            flash('Yüklenecek Excel/CSV dosyasını seçin.', 'danger');
-            redirect_to('companies');
-        }
-
-        try {
-            $rowsToImport = read_import_rows($_FILES['company_file']);
-            $rowsToImport = array_values(array_filter($rowsToImport, fn($row) => count(array_filter($row, fn($cell) => trim((string) $cell) !== '')) > 0));
-            if (count($rowsToImport) < 2) {
-                flash('Dosyada başlık satırı ve en az bir firma satırı olmalıdır.', 'danger');
-                redirect_to('companies');
-            }
-
-            $headers = array_values($rowsToImport[0]);
-            $inserted = 0;
-            $skipped = 0;
-            $fallbackResponsible = can_view_all() ? (int) ($_POST['responsible_user_id'] ?? current_user()['id']) : (int) current_user()['id'];
-            $validUserIds = array_map(fn($user) => (int) $user['id'], active_users());
-            if (!in_array($fallbackResponsible, $validUserIds, true)) {
-                $fallbackResponsible = (int) current_user()['id'];
-            }
-
-            $insert = db()->prepare('INSERT INTO companies (name, account_type, contact_person, phone, email, city, district, address, status, source, responsible_user_id, next_followup_date, description, created_by) VALUES (:name, :account_type, :contact_person, :phone, :email, :city, :district, :address, :status, :source, :responsible_user_id, :next_followup_date, :description, :created_by)');
-            $duplicate = db()->prepare('SELECT COUNT(*) FROM companies WHERE name = :name AND ((:phone <> "" AND phone = :phone) OR (:email <> "" AND email = :email) OR (:phone = "" AND :email = ""))');
-
-            db()->beginTransaction();
-            foreach (array_slice($rowsToImport, 1) as $row) {
-                $data = canonical_import_row($headers, array_values($row));
-                $name = trim($data['name'] ?? '');
-                if ($name === '') {
-                    $skipped++;
-                    continue;
-                }
-
-                $phone = trim($data['phone'] ?? '');
-                $email = trim($data['email'] ?? '');
-                $duplicate->execute([
-                    ':name' => $name,
-                    ':phone' => $phone,
-                    ':email' => $email,
-                ]);
-                if ((int) $duplicate->fetchColumn() > 0) {
-                    $skipped++;
-                    continue;
-                }
-
-                $status = trim($data['status'] ?? 'Yeni kayıt');
-                if (!in_array($status, company_statuses(), true)) {
-                    $status = 'Yeni kayıt';
-                }
-
-                $insert->execute([
-                    ':name' => $name,
-                    ':account_type' => normalize_company_account_type($data['account_type'] ?? ''),
-                    ':contact_person' => trim($data['contact_person'] ?? ''),
-                    ':phone' => $phone,
-                    ':email' => $email,
-                    ':city' => trim($data['city'] ?? ''),
-                    ':district' => trim($data['district'] ?? ''),
-                    ':address' => trim($data['address'] ?? ''),
-                    ':status' => $status,
-                    ':source' => trim($data['source'] ?? 'Excel aktarımı'),
-                    ':responsible_user_id' => find_responsible_user_id($data['responsible'] ?? '', $fallbackResponsible),
-                    ':next_followup_date' => import_date_value($data['next_followup_date'] ?? ''),
-                    ':description' => trim($data['description'] ?? ''),
-                    ':created_by' => current_user()['id'],
-                ]);
-                $inserted++;
-            }
-            db()->commit();
-
-            flash($inserted . ' firma içe aktarıldı. ' . $skipped . ' satır atlandı.');
-        } catch (Throwable $e) {
-            if (db()->inTransaction()) {
-                db()->rollBack();
-            }
-            flash('İçe aktarma başarısız: ' . $e->getMessage(), 'danger');
-        }
+        flash('Excelden cari aktarımı kaldırıldı. Yeni carileri Cariler ekranından tek tek açın.', 'danger');
         redirect_to('companies');
     }
 
@@ -693,7 +616,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ':status' => $_POST['status'] ?? 'Yeni kayıt',
             ':source' => trim($_POST['source'] ?? ''),
             ':responsible_user_id' => $responsible,
-            ':next_followup_date' => $_POST['next_followup_date'] ?: null,
             ':description' => trim($_POST['description'] ?? ''),
         ];
         if (!in_array($data[':status'], company_statuses(), true)) {
@@ -727,11 +649,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         if ($id > 0) {
             $data[':id'] = $id;
-            db()->prepare('UPDATE companies SET name = :name, sql_customer_id = :sql_customer_id, account_type = :account_type, account_code = :account_code, contact_person = :contact_person, phone = :phone, email = :email, city = :city, district = :district, address = :address, tax_no = :tax_no, balance_amount = :balance_amount, balance_side = :balance_side, status = :status, source = :source, responsible_user_id = :responsible_user_id, next_followup_date = :next_followup_date, description = :description, updated_at = CURRENT_TIMESTAMP WHERE id = :id')->execute($data);
+            db()->prepare('UPDATE companies SET name = :name, sql_customer_id = :sql_customer_id, account_type = :account_type, account_code = :account_code, contact_person = :contact_person, phone = :phone, email = :email, city = :city, district = :district, address = :address, tax_no = :tax_no, balance_amount = :balance_amount, balance_side = :balance_side, status = :status, source = :source, responsible_user_id = :responsible_user_id, description = :description, updated_at = CURRENT_TIMESTAMP WHERE id = :id')->execute($data);
             flash('Cari kartı güncellendi.');
         } else {
             $data[':created_by'] = current_user()['id'];
-            db()->prepare('INSERT INTO companies (name, sql_customer_id, account_type, account_code, contact_person, phone, email, city, district, address, tax_no, balance_amount, balance_side, status, source, responsible_user_id, next_followup_date, description, created_by) VALUES (:name, :sql_customer_id, :account_type, :account_code, :contact_person, :phone, :email, :city, :district, :address, :tax_no, :balance_amount, :balance_side, :status, :source, :responsible_user_id, :next_followup_date, :description, :created_by)')->execute($data);
+            db()->prepare('INSERT INTO companies (name, sql_customer_id, account_type, account_code, contact_person, phone, email, city, district, address, tax_no, balance_amount, balance_side, status, source, responsible_user_id, description, created_by) VALUES (:name, :sql_customer_id, :account_type, :account_code, :contact_person, :phone, :email, :city, :district, :address, :tax_no, :balance_amount, :balance_side, :status, :source, :responsible_user_id, :description, :created_by)')->execute($data);
             $id = (int) db()->lastInsertId();
             flash('Cari kartı oluşturuldu.');
         }
@@ -1173,26 +1095,6 @@ if ($page === 'companies') {
             </div>
         <?php endif; ?>
     <?php endif; ?>
-    <form class="panel import-panel" method="post" action="<?= e(app_url('import_companies')) ?>" enctype="multipart/form-data">
-        <?= csrf_field() ?>
-        <div>
-            <h2>Excelden cari yükle</h2>
-            <p class="muted">Başlıklar: <?= $usingSqlServerCompanies ? 'Cari, Yetkili, Telefon, E-posta, İl, İlçe, Adres, Kaynak, Sorumlu, Sonraki takip, Açıklama' : 'Cari, Yetkili, Telefon, E-posta, İl, İlçe, Adres, Durum, Kaynak, Sorumlu, Sonraki takip, Açıklama' ?>. CSV veya XLSX yükleyebilirsiniz.</p>
-        </div>
-        <?php if (can_view_all()): ?>
-            <label>Varsayılan sorumlu
-                <select name="responsible_user_id">
-                    <?php foreach ($users as $user): ?>
-                        <option value="<?= e($user['id']) ?>"<?= selected(current_user()['id'], $user['id']) ?>><?= e($user['full_name']) ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </label>
-        <?php endif; ?>
-        <label>Dosya
-            <input type="file" name="company_file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
-        </label>
-        <button class="btn primary" type="submit">Yükle</button>
-    </form>
     <section class="panel">
         <div class="section-title">
             <div>
@@ -1286,7 +1188,6 @@ if ($page === 'company_form') {
                 <?php endforeach; ?>
             </select>
         </label>
-        <label>Sonraki takip tarihi <input type="date" name="next_followup_date" value="<?= e($company['next_followup_date'] ?? '') ?>"></label>
         <label class="wide">Açıklama <textarea name="description"><?= e($company['description'] ?? '') ?></textarea></label>
         <div class="actions wide">
             <button class="btn primary" type="submit">Kaydet</button>
