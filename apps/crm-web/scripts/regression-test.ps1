@@ -115,7 +115,7 @@ Cleanup-RegressionData
 
 $assets = @(
     "/assets/app.css",
-    "/assets/brand/bilnex-logo.jpg",
+    "/assets/brand/bilnex-logo.svg",
     "/assets/brand/bilnex-platform.webp",
     "/assets/brand/bilnex-office.webp"
 )

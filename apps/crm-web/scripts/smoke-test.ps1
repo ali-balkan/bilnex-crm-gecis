@@ -97,7 +97,7 @@ function Post-And-Follow($url, $body, $session) {
 Cleanup-SmokeData
 
 Assert-True ((Invoke-WebRequest -Uri "$base/assets/app.css" -UseBasicParsing).StatusCode -eq 200) "CSS dosyası yükleniyor"
-Assert-True ((Invoke-WebRequest -Uri "$base/assets/brand/bilnex-logo.jpg" -UseBasicParsing).StatusCode -eq 200) "Logo dosyası yükleniyor"
+Assert-True ((Invoke-WebRequest -Uri "$base/assets/brand/bilnex-logo.svg" -UseBasicParsing).StatusCode -eq 200) "Logo dosyası yükleniyor"
 
 $users = @(
     @{ Username = "test_admin"; Password = "Test123!admin"; CanUsers = $true; ExpectedVisible = "Test Test Saha" },

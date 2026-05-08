@@ -60,9 +60,9 @@ input, select, textarea, button { font: inherit; min-width: 0; }
 .brand:hover { text-decoration: none; }
 
 .brand-logo-wrap {
-    width: 106px;
-    height: 48px;
-    flex: 0 0 106px;
+    width: 56px;
+    height: 56px;
+    flex: 0 0 56px;
     display: grid;
     place-items: center;
     overflow: hidden;
@@ -73,7 +73,8 @@ input, select, textarea, button { font: inherit; min-width: 0; }
 }
 
 .brand-logo-wrap img {
-    width: 94px;
+    width: 44px;
+    max-height: 44px;
     height: auto;
     object-fit: contain;
 }
@@ -1578,9 +1579,9 @@ dialog.modal::backdrop {
 }
 
 .login-logo {
-    width: 220px;
-    height: 92px;
-    object-fit: cover;
+    width: 96px;
+    height: 96px;
+    object-fit: contain;
     object-position: center;
     border-radius: 8px;
     border: 1px solid var(--line);
@@ -1631,7 +1632,7 @@ dialog.modal::backdrop {
         overflow: visible;
     }
     .sidebar nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .brand-logo-wrap { width: 78px; flex-basis: 78px; }
+    .brand-logo-wrap { width: 56px; flex-basis: 56px; }
     .user-box { margin-top: 0; }
     .content { padding: 16px; }
     .topbar, .detail-head, .actions, .section-title, .report-hero, .field-hero { align-items: stretch; flex-direction: column; }
@@ -1649,8 +1650,8 @@ dialog.modal::backdrop {
     }
 
     .brand-logo-wrap {
-        width: 110px;
-        flex-basis: 110px;
+        width: 56px;
+        flex-basis: 56px;
     }
 
     .page-dashboard .content {
@@ -1687,7 +1688,7 @@ dialog.modal::backdrop {
     }
 
     .brand-logo-wrap img {
-        width: 98px;
+        width: 44px;
     }
 
     .topbar .btn,
@@ -1827,10 +1828,10 @@ dialog.modal::backdrop {
     .sidebar { padding: 12px; }
     .sidebar nav { grid-template-columns: 1fr; }
     .brand-logo-wrap {
-        width: 96px;
-        flex-basis: 96px;
+        width: 52px;
+        flex-basis: 52px;
     }
-    .brand-logo-wrap img { width: 86px; }
+    .brand-logo-wrap img { width: 40px; }
     td {
         grid-template-columns: 1fr;
         gap: 4px;

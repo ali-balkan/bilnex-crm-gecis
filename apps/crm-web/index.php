@@ -139,13 +139,13 @@ function render_login(): void
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>Giriş | <?= e(app_config('app_name')) ?></title>
-        <link rel="icon" href="<?= e(rtrim(app_config('base_url'), '/')) ?>/assets/brand/bilnex-logo.jpg">
+        <link rel="icon" href="<?= e(rtrim(app_config('base_url'), '/')) ?>/assets/brand/bilnex-logo.svg">
         <link rel="stylesheet" href="<?= e(rtrim(app_config('base_url'), '/')) ?>/assets/app.css">
     </head>
     <body class="login-page">
         <main class="login-shell">
             <section class="login-panel">
-                <img class="login-logo" src="<?= e(rtrim(app_config('base_url'), '/')) ?>/assets/brand/bilnex-logo.jpg" alt="Bilnex Yazılım Çözümleri">
+                <img class="login-logo" src="<?= e(rtrim(app_config('base_url'), '/')) ?>/assets/brand/bilnex-logo.svg" alt="Bilnex Yazılım Çözümleri">
                 <h1>İş Ortakları CRM</h1>
                 <p>Bilnex Yazılım Çözümleri bayi takip paneli</p>
                 <?php if ($flash): ?>
@@ -209,14 +209,14 @@ function render_header(string $title): void
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title><?= e($title) ?> | <?= e(app_config('app_name')) ?></title>
-        <link rel="icon" href="<?= e(rtrim(app_config('base_url'), '/')) ?>/assets/brand/bilnex-logo.jpg">
+        <link rel="icon" href="<?= e(rtrim(app_config('base_url'), '/')) ?>/assets/brand/bilnex-logo.svg">
         <link rel="stylesheet" href="<?= e(rtrim(app_config('base_url'), '/')) ?>/assets/app.css">
     </head>
     <body class="page-<?= e($currentPage) ?>">
         <div class="app-shell">
             <aside class="sidebar">
                 <a class="brand" href="<?= e(app_url()) ?>">
-                    <span class="brand-logo-wrap"><img src="<?= e(rtrim(app_config('base_url'), '/')) ?>/assets/brand/bilnex-logo-sidebar.jpg" alt="Bilnex"></span>
+                    <span class="brand-logo-wrap"><img src="<?= e(rtrim(app_config('base_url'), '/')) ?>/assets/brand/bilnex-logo.svg" alt="Bilnex"></span>
                     <span>
                         <strong>İş Ortakları CRM</strong>
                         <small>İş Ortakları</small>
@@ -2224,7 +2224,7 @@ if ($page === 'reports') {
     ?>
     <section class="print-report-cover" aria-hidden="true">
         <div class="print-brand">
-            <img src="<?= e(rtrim(app_config('base_url'), '/')) ?>/assets/brand/bilnex-logo.jpg" alt="">
+            <img src="<?= e(rtrim(app_config('base_url'), '/')) ?>/assets/brand/bilnex-logo.svg" alt="">
             <div>
                 <strong>Bilnex İş Ortakları CRM</strong>
                 <span>Performans ve satış raporu</span>
