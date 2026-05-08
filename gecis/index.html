@@ -5,7 +5,244 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bilnex CRM Geçiş Planı</title>
   <style>
-    body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#eef3f9;color:#002552;line-height:1.5}header{background:#082b55;color:#fff;padding:28px 40px;border-bottom:4px solid #ff6b35}main{width:min(1180px,calc(100% - 32px));margin:24px auto 48px}.summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.stat,section{background:#fff;border:1px solid #cdd9e7;border-radius:8px;box-shadow:0 10px 30px rgba(0,37,82,.06)}.stat{padding:16px}.stat span{display:block;color:#546274;font-size:13px}.stat strong{display:block;margin-top:8px;font-size:24px}section{margin-top:16px;padding:20px}.tag{display:inline-flex;padding:4px 10px;border-radius:999px;background:#e7f3ff;color:#0a76bd;font-weight:700;font-size:12px}.checklist{list-style:none;padding:0;display:grid;gap:10px}.checklist li{display:grid;grid-template-columns:26px 1fr auto auto;gap:10px;padding:12px;border:1px solid #cdd9e7;border-radius:8px;background:#fbfdff}.checklist li.done{background:#f3fbf7;border-color:#bce6d0}input[type=checkbox]{width:18px;height:18px;cursor:not-allowed;filter:grayscale(1);opacity:.65}.phase,.date{color:#546274;font-size:12px;font-weight:700;white-space:nowrap}.timeline{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.day{border:1px solid #cdd9e7;border-radius:8px;padding:14px;background:#fbfdff}.mapping{width:100%;border-collapse:collapse;min-width:720px}.table-wrap{overflow-x:auto}th,td{text-align:left;padding:11px 10px;border-bottom:1px solid #cdd9e7;vertical-align:top}footer{width:min(1180px,calc(100% - 32px));margin:0 auto 30px;color:#546274;font-size:13px}@media(max-width:900px){.summary,.timeline{grid-template-columns:1fr}.checklist li{grid-template-columns:26px 1fr}.phase,.date{grid-column:2}}
+    :root {
+      --bg: #eef3f9;
+      --ink: #002552;
+      --muted: #546274;
+      --line: #cdd9e7;
+      --panel: #ffffff;
+      --brand: #0a76bd;
+      --accent: #ff6b35;
+      --ok: #1f9d61;
+      --locked: #eef2f6;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.5;
+    }
+    header {
+      background: #082b55;
+      color: #fff;
+      padding: 28px clamp(18px, 4vw, 48px);
+      border-bottom: 4px solid var(--accent);
+    }
+    header h1 {
+      margin: 0 0 6px;
+      font-size: clamp(26px, 4vw, 42px);
+      letter-spacing: 0;
+    }
+    header p {
+      margin: 0;
+      color: #dce9f8;
+      max-width: 900px;
+    }
+    main {
+      width: min(1180px, calc(100% - 32px));
+      margin: 24px auto 48px;
+    }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+    .stat, section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 10px 30px rgba(0, 37, 82, .06);
+    }
+    .stat {
+      padding: 16px;
+      min-height: 92px;
+    }
+    .stat span {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .stat strong {
+      display: block;
+      margin-top: 8px;
+      font-size: 24px;
+    }
+    section {
+      margin-top: 16px;
+      padding: 20px;
+    }
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 12px;
+      margin-bottom: 14px;
+    }
+    h2 {
+      margin: 0;
+      font-size: 20px;
+    }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #e7f3ff;
+      color: var(--brand);
+      font-weight: 700;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    ol, ul {
+      padding-left: 22px;
+      margin: 0;
+    }
+    li {
+      margin: 10px 0;
+    }
+    .checklist {
+      list-style: none;
+      padding: 0;
+      display: grid;
+      gap: 10px;
+    }
+    .checklist li {
+      display: grid;
+      grid-template-columns: 26px 1fr auto auto;
+      gap: 10px;
+      align-items: start;
+      margin: 0;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfdff;
+    }
+    .checklist li.done {
+      background: #f3fbf7;
+      border-color: #bce6d0;
+    }
+    .checklist details {
+      display: contents;
+    }
+    .checklist summary {
+      cursor: pointer;
+      font-weight: 700;
+      list-style: none;
+    }
+    .checklist summary::-webkit-details-marker {
+      display: none;
+    }
+    .checklist summary::after {
+      content: "Detay";
+      display: inline-flex;
+      margin-left: 10px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #e7f3ff;
+      color: #0a76bd;
+      font-size: 11px;
+      font-weight: 700;
+      vertical-align: middle;
+    }
+    .checklist details[open] summary::after {
+      content: "Kapat";
+    }
+    .item-detail {
+      grid-column: 2 / 5;
+      margin-top: 8px;
+      padding: 10px 12px;
+      border-left: 3px solid var(--brand);
+      background: #f6f9fd;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      margin-top: 2px;
+      accent-color: var(--ok);
+      cursor: not-allowed;
+      opacity: .65;
+    }
+    input[type="checkbox"]:disabled {
+      filter: grayscale(1);
+    }
+    .phase, .date {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .date {
+      color: #344155;
+    }
+    .note {
+      color: var(--muted);
+      font-size: 14px;
+      margin-top: 8px;
+    }
+    .mapping {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 720px;
+    }
+    .table-wrap {
+      overflow-x: auto;
+    }
+    th, td {
+      text-align: left;
+      padding: 11px 10px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+    th {
+      color: #3b4656;
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+    .timeline {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .day {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      background: #fbfdff;
+    }
+    .day strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 16px;
+    }
+    .day span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    footer {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto 30px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    @media (max-width: 900px) {
+      .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .timeline { grid-template-columns: 1fr; }
+      .checklist li { grid-template-columns: 26px 1fr; }
+      .phase, .date, .item-detail { grid-column: 2; }
+    }
+    @media (max-width: 520px) {
+      main { width: min(100% - 20px, 1180px); }
+      .summary { grid-template-columns: 1fr; }
+      section { padding: 14px; }
+    }
   </style>
 </head>
 <body>
@@ -13,41 +250,101 @@
     <h1>Bilnex CRM Geçiş Planı</h1>
     <p>SQLite tabanlı mevcut CRM'in monorepo yapıya alınması ve SQL Server üzerindeki Bilnex CRM tablolarıyla kontrollü şekilde çalışması için takip ekranı.</p>
   </header>
+
   <main>
     <div class="summary">
       <div class="stat"><span>Durum</span><strong>Başladı</strong></div>
       <div class="stat"><span>Hedef bitiş</span><strong>09.05.2026</strong></div>
       <div class="stat"><span>Ana Cari Tablosu</span><strong>dbo.Customer</strong></div>
-      <div class="stat"><span>Son güncelleme</span><strong>07.05.2026</strong></div>
+      <div class="stat"><span>Son güncelleme</span><strong>07.05.2026 12:30</strong></div>
     </div>
+
     <section>
-      <h2>3 Günlük Takvim <span class="tag">07-09 Mayıs 2026</span></h2>
+      <div class="section-head">
+        <h2>3 Günlük Takvim</h2>
+        <span class="tag">07-09 Mayıs 2026</span>
+      </div>
       <div class="timeline">
-        <div class="day"><strong>1. Gün - 07.05.2026</strong><br>Yedek, GitHub hazırlığı, monorepo iskeleti ve mevcut CRM'in davranış değişmeden taşınması.</div>
-        <div class="day"><strong>2. Gün - 08.05.2026</strong><br>SQL Server bağlantı katmanı, Customer/Address okuma entegrasyonu ve ekran testleri.</div>
-        <div class="day"><strong>3. Gün - 09.05.2026</strong><br>Kontrollü yazma testleri, fırsat/görev ilişkileri, mobil test ve canlı geçiş hazırlığı.</div>
+        <div class="day">
+          <strong>1. Gün - 07.05.2026</strong>
+          <span>Yedek, GitHub hazırlığı, monorepo iskeleti ve mevcut CRM'in davranış değişmeden taşınması.</span>
+        </div>
+        <div class="day">
+          <strong>2. Gün - 08.05.2026</strong>
+          <span>SQL Server bağlantı katmanı, Customer/Address okuma entegrasyonu ve ekran testleri.</span>
+        </div>
+        <div class="day">
+          <strong>3. Gün - 09.05.2026</strong>
+          <span>Kontrollü yazma testleri, fırsat/görev ilişkileri, mobil test ve canlı geçiş hazırlığı.</span>
+        </div>
       </div>
     </section>
+
     <section>
-      <h2>Geçiş Kontrol Listesi <span class="tag">Yalnız Codex günceller</span></h2>
-      <ul class="checklist">
-        <li class="done"><input type="checkbox" checked disabled><span>Geçiş takip sayfası oluşturuldu.</span><span class="phase">Hazırlık</span><span class="date">07.05</span></li>
-        <li class="done"><input type="checkbox" checked disabled><span>SQL Server instance doğrulandı: localhost\BILNEXSQLCRM.</span><span class="phase">Keşif</span><span class="date">07.05</span></li>
-        <li class="done"><input type="checkbox" checked disabled><span>Hedef database doğrulandı: BILNEXCRMDB.</span><span class="phase">Keşif</span><span class="date">07.05</span></li>
-        <li class="done"><input type="checkbox" checked disabled><span>dbo.Customer, dbo.Address ve dbo.CustomerType tabloları incelendi.</span><span class="phase">Keşif</span><span class="date">07.05</span></li>
-        <li class="done"><input type="checkbox" checked disabled><span>Mevcut CRM dosyaları ve SQLite veritabanı yedeklendi.</span><span class="phase">Hazırlık</span><span class="date">07.05</span></li>
-        <li class="done"><input type="checkbox" checked disabled><span>Canlı FTP alanındaki mevcut CRM dosyaları ve veritabanı yedeklendi.</span><span class="phase">Hazırlık</span><span class="date">07.05</span></li>
-        <li class="done"><input type="checkbox" checked disabled><span>GitHub ortak repo hazırlandı ve ilk dosyalar eklendi.</span><span class="phase">GitHub</span><span class="date">07.05</span></li>
-        <li><input type="checkbox" disabled><span>CustomerTypeId kararları netleştirildi.</span><span class="phase">Karar</span><span class="date">07.05</span></li>
-        <li><input type="checkbox" disabled><span>Monorepo klasör yapısı kuruldu.</span><span class="phase">Kod</span><span class="date">07.05</span></li>
-        <li><input type="checkbox" disabled><span>SQL Server bağlantı katmanı sadece okuma modunda eklendi.</span><span class="phase">Kod</span><span class="date">08.05</span></li>
+      <div class="section-head">
+        <h2>Geçiş Kontrol Listesi</h2>
+        <span class="tag">Yalnız Codex günceller</span>
+      </div>
+      <ul class="checklist" id="migration-checklist">
+        <li class="done"><input type="checkbox" checked disabled><details><summary>Geçiş takip sayfası oluşturuldu.</summary><div class="item-detail">CRM'den bağımsız bir geçiş takip ekranı hazırlandı. Checkbox'lar kullanıcıya kapatıldı; tamamlanan adımları Codex güncelleyecek.</div></details><span class="phase">Hazırlık</span><span class="date">07.05</span></li>
+        <li class="done"><input type="checkbox" checked disabled><details><summary>SQL Server instance doğrulandı: localhost\BILNEXSQLCRM.</summary><div class="item-detail">Bilnex kurulum dosyası ve servisler kontrol edildi. SQL Server instance çalışır durumda görüldü. Bu adımda DB üzerinde değişiklik yapılmadı.</div></details><span class="phase">Keşif</span><span class="date">07.05</span></li>
+        <li class="done"><input type="checkbox" checked disabled><details><summary>Hedef database doğrulandı: BILNEXCRMDB.</summary><div class="item-detail">SQL Server bağlantısı sadece okuma sorgularıyla test edildi. Hedef CRM database olarak BILNEXCRMDB belirlendi.</div></details><span class="phase">Keşif</span><span class="date">07.05</span></li>
+        <li class="done"><input type="checkbox" checked disabled><details><summary>dbo.Customer, dbo.Address ve dbo.CustomerType tabloları incelendi.</summary><div class="item-detail">Customer ana cari kartı, Address iletişim/adres bilgisi, CustomerType ise müşteri tipi kaynağı olarak belirlendi. Bilnex SQL şemasına dokunulmadı.</div></details><span class="phase">Keşif</span><span class="date">07.05</span></li>
+        <li class="done"><input type="checkbox" checked disabled><details><summary>Mevcut CRM dosyaları ve SQLite veritabanı yedeklendi.</summary><div class="item-detail">Yerel proje dosyaları ve data/crm.sqlite dosyası data/backups altında migration yedeğine alındı.</div></details><span class="phase">Hazırlık</span><span class="date">07.05</span></li>
+        <li class="done"><input type="checkbox" checked disabled><details><summary>Canlı FTP alanındaki mevcut CRM dosyaları ve veritabanı yedeklendi.</summary><div class="item-detail">Canlı FTP'den index.php, config.php, app/bootstrap.php, assets/app.css ve data/crm.sqlite dosyaları yedek klasörüne indirildi.</div></details><span class="phase">Hazırlık</span><span class="date">07.05</span></li>
+        <li class="done"><input type="checkbox" checked disabled><details><summary>GitHub ortak repo hazırlandı ve ilk dosyalar eklendi.</summary><div class="item-detail">ali-balkan/bilnex-crm-gecis reposuna geçiş planı, SQL eşleştirme notları, checklist ve takip sayfası eklendi.</div></details><span class="phase">GitHub</span><span class="date">07.05</span></li>
+        <li class="done"><input type="checkbox" checked disabled><details><summary>CustomerTypeId kararları netleştirildi: iş ortağı=7, hedef bayi=14, müşteri=16, hedef müşteri=17.</summary><div class="item-detail">CRM tarafında kullanılacak tip eşleştirmesi belgelendi. Bilnex CustomerType tablosunda değişiklik yapılmadı.</div></details><span class="phase">Karar</span><span class="date">07.05</span></li>
+        <li class="done"><input type="checkbox" checked disabled><details><summary>MainCustomerId=1, StaffId=0, RepresentativeId=NULL ve CustomerTaxType kuralı netleştirildi.</summary><div class="item-detail">Mevcut Customer kayıtları sadece okunarak varsayılanlar belirlendi. CustomerTaxType şahıs/kurum ayrımına göre hesaplanacak.</div></details><span class="phase">Karar</span><span class="date">07.05</span></li>
+        <li class="done"><input type="checkbox" checked disabled><details><summary>Monorepo klasör yapısı kuruldu.</summary><div class="item-detail">apps/crm-web, packages/database, packages/shared ve docs klasörleri oluşturuldu. Bu aşamada mevcut CRM davranışı taşınmadı, sadece iskelet kuruldu.</div></details><span class="phase">Kod</span><span class="date">07.05</span></li>
+        <li class="done"><input type="checkbox" checked disabled><details><summary>Mevcut CRM monorepo içine taşındı, davranış değiştirilmeden çalıştırıldı.</summary><div class="item-detail">Mevcut PHP CRM dosyaları apps/crm-web altına kopyalandı: index.php, config.php, app, assets, data ve scripts. apps/crm-web/start-local.ps1 eklendi. Monorepo kopyasında PHP sözdizimi kontrol edildi ve login ekranı aynı davranışla render edildi.</div></details><span class="phase">Kod</span><span class="date">07.05</span></li>
+        <li class="done"><input type="checkbox" checked disabled><details><summary>SQL Server bağlantı katmanı sadece okuma modunda eklendi.</summary><div class="item-detail">packages/database altında ReadOnlySqlServerConnection ve CustomerReadRepository eklendi. apps/crm-web/bootstrap içine bilnex_sql_server() ve bilnex_customer_reader() yardımcıları bağlandı. Yazma/şema değiştirme sorgularını reddeden test geçti. PHP tarafında canlı bağlantı için pdo_sqlsrv eklentisi gerekecek.</div></details><span class="phase">Kod</span><span class="date">08.05</span></li>
+        <li class="done"><input type="checkbox" checked disabled><details><summary>Bayi/Firma ekranı SQL Server Customer verisini okuyacak şekilde test edildi.</summary><div class="item-detail">CRM_COMPANY_SOURCE=sqlserver modunda Bayi/Firma listesi SQL Server dbo.Customer kaynağından sadece okuma modunda beslenecek şekilde eklendi. Customer satırları ekranın beklediği cari kodu, firma, cari türü, durum ve kaynak alanlarına map edildi. Test scripti SQL Server'dan 5 Customer kaydı okuyarak geçti.</div></details><span class="phase">Test</span><span class="date">08.05</span></li>
+        <li class="done"><input type="checkbox" checked disabled><details><summary>Yeni cari yazma işlemi test ortamında Customer + Address tablolarıyla denendi.</summary><div class="item-detail">Customer + Address yazma akışı gerçek SQL Server tablolarında transaction içinde denendi. Test negatif ID ve BILNEX_SQL_WRITE_TEST=rollback korumasıyla çalıştı; transaction içinde ilişki doğrulandı ve rollback sonrası Customer=0, Address=0 kalıcı test kaydı kaldığı doğrulandı.</div></details><span class="phase">Test</span><span class="date">09.05</span></li>
+        <li class="done"><input type="checkbox" checked disabled><details><summary>Satış fırsatları, görevler ve görüşmeler SQL Customer Id ile ilişkilendirildi.</summary><div class="item-detail">CRM tarafında companies.sql_customer_id alanı eklendi. Görüşmeler, satış fırsatları ve ilgili firma seçilen görevler aynı SQL Customer Id değerini kendi tablolarında saklıyor. Transaction rollback testinde interactions=1, opportunities=1, tasks=1 ilişkisi doğrulandı ve kalıcı test verisi bırakılmadı.</div></details><span class="phase">Kod</span><span class="date">09.05</span></li>
+        <li class="done"><input type="checkbox" checked disabled><details><summary>Mobil görünüm, yetki kuralları ve raporlar tekrar test edildi.</summary><div class="item-detail">Mobil tablo/kart görünümü, dokunma alanları ve dar ekran menüsü iyileştirildi. Satış Fırsatları tablosu yeni SQL Customer kolonu ile uyumlu hale getirildi. Raporlarda kullanıcı kapsamı sorumlu olduğu veya kendi oluşturduğu kayıtları içerecek şekilde düzeltildi. Dashboard, Bayi/Firma, Takip Listesi, Satış Fırsatları ve Raporlar render testi geçti; mobil/yetki/rapor testi sales_scope=2 admin_scope=3 sonucu verdi.</div></details><span class="phase">Test</span><span class="date">09.05</span></li>
+        <li class="done"><input type="checkbox" checked disabled><details><summary>Canlıya geçiş öncesi son yedek alındı.</summary><div class="item-detail">data/backups/pre-live-20260507-172527 klasörüne yerel proje zip yedeği, yerel SQLite, monorepo SQLite ve canlı FTP'den index.php, config.php, bootstrap.php, app.css, crm.sqlite ve logo dosyaları indirildi. Manifest oluşturuldu; 11 dosya ve toplam 19.393.298 byte doğrulandı. Bilnex SQL tarafında değişiklik yapılmadı.</div></details><span class="phase">Canlı</span><span class="date">09.05</span></li>
+        <li><input type="checkbox" disabled><details><summary>Canlı geçiş yapıldı ve Bilnex tarafında yeni/var olan cariler kontrol edildi.</summary><div class="item-detail">Planlanan adım. Geçiş sonrası Bilnex uygulamasında Customer görünümü ve CRM tarafında listeleme doğrulanacak.</div></details><span class="phase">Canlı</span><span class="date">09.05</span></li>
       </ul>
+      <p class="note"><strong id="progress-text">0/0 tamamlandı.</strong> Bu işaretler kullanıcı tarafından değiştirilemez. Her tamamlanan adımı Codex güncelleyecek.</p>
     </section>
+
     <section>
-      <h2>Veri Eşleştirme</h2>
-      <div class="table-wrap"><table class="mapping"><thead><tr><th>CRM Alanı</th><th>SQL Server Alanı</th><th>Not</th></tr></thead><tbody><tr><td>Firma adı</td><td>dbo.Customer.Name1</td><td>Ana cari adı.</td></tr><tr><td>Cari türü</td><td>dbo.Customer.CustomerTypeId</td><td>İş ortağı ve son kullanıcı ayrımı.</td></tr><tr><td>Telefon</td><td>dbo.Address.Phone</td><td>CustomerId ile bağlı.</td></tr><tr><td>E-posta</td><td>dbo.Address.EMail</td><td>CustomerId ile bağlı.</td></tr></tbody></table></div>
+      <div class="section-head">
+        <h2>Veri Eşleştirme</h2>
+        <span class="tag">Customer + Address</span>
+      </div>
+      <div class="table-wrap">
+        <table class="mapping">
+          <thead>
+            <tr><th>CRM Alanı</th><th>SQL Server Alanı</th><th>Not</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Firma adı</td><td>dbo.Customer.Name1</td><td>Ana müşteri/cari adı.</td></tr>
+            <tr><td>Yetkili kişi</td><td>dbo.Customer.Name2 veya dbo.CustomerRep.Name</td><td>Kesin karar sonraki analizde verilecek.</td></tr>
+            <tr><td>Cari kodu</td><td>dbo.Customer.Code</td><td>Örnek: 120-CRM-13918.</td></tr>
+            <tr><td>Cari türü</td><td>dbo.Customer.CustomerTypeId</td><td>İş ortağı ve son kullanıcı ayrımı buradan gelecek.</td></tr>
+            <tr><td>Vergi no</td><td>dbo.Customer.TaxNumber</td><td>Hassas veri; maskeli test yapılacak.</td></tr>
+            <tr><td>Telefon</td><td>dbo.Address.Phone</td><td>CustomerId ile bağlanacak.</td></tr>
+            <tr><td>E-posta</td><td>dbo.Address.EMail</td><td>CustomerId ile bağlanacak.</td></tr>
+            <tr><td>İl / İlçe / Adres</td><td>dbo.Address.City / Town / Address1</td><td>Adres verisi Customer içinde değil.</td></tr>
+            <tr><td>Açıklama</td><td>dbo.Customer.Description</td><td>255 karakter sınırı var.</td></tr>
+            <tr><td>Aktiflik</td><td>dbo.Customer.isActive / isDeleted</td><td>Silme yerine pasifleştirme yaklaşımı değerlendirilecek.</td></tr>
+          </tbody>
+        </table>
+      </div>
     </section>
   </main>
-  <footer>Bu alan mevcut CRM'den bağımsız geçiş takip ekranıdır.</footer>
+
+  <footer>
+    Bu alan mevcut CRM'den bağımsız geçiş takip ekranıdır. Kod değişikliği, veri yazma veya canlı geçiş adımları ayrıca onayla yapılacaktır.
+  </footer>
+  <script>
+    (function () {
+      var boxes = Array.prototype.slice.call(document.querySelectorAll('#migration-checklist input[type="checkbox"]'));
+      var progress = document.getElementById('progress-text');
+      var done = boxes.filter(function (box) { return box.checked; }).length;
+      progress.textContent = done + '/' + boxes.length + ' tamamlandı.';
+    })();
+  </script>
 </body>
 </html>

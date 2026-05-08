@@ -1,22 +1,37 @@
 # Database Paketi
 
-CRM'in veritabanı erişim katmanı burada toplanacaktır.
+CRM'in veritabanı erişim katmanı burada toplanır.
 
-## İlk Hedef
+## Eklenen Katman
 
-Bilnex SQL Server mimarisine uygun şekilde yalnız `Customer` entegrasyonu yapılacak.
+- `src/ReadOnlySqlServerConnection.php`: SQL Server için sadece okuma sorgularına izin veren bağlantı katmanı.
+- `src/CustomerReadRepository.php`: `dbo.Customer` verisini okumak için repository.
+- `scripts/sqlserver-readonly-query.ps1`: PHP'de `pdo_sqlsrv` olmayan yerel kurulumlarda .NET SqlClient ile sadece okuma sorgusu çalıştıran köprü.
+- `scripts/sqlserver-customer-address-write-rollback-test.ps1`: `dbo.Customer` + `dbo.Address` yazma alanlarını transaction içinde deneyen ve sonunda rollback yapan test scripti.
 
-## Hedef Repository Sınıfları
+Katman yalnızca `SELECT` ve `WITH` ile başlayan sorguları kabul eder. `INSERT`, `UPDATE`, `DELETE`, `ALTER`, `DROP`, `CREATE`, `MERGE`, `TRUNCATE`, `EXEC` ve `SELECT INTO` gibi yazma veya şema değiştirme riski taşıyan sorgular kod seviyesinde reddedilir.
 
-- `CustomerRepository`
-- `AddressRepository`
-- `CustomerTypeRepository`
+## CRM Entegrasyonu
 
-## SQL Server Kapsamı
+`apps/crm-web/app/bootstrap.php` içinde şu yardımcılar eklendi:
 
-- `dbo.Customer`
-- `dbo.Address`
-- `dbo.CustomerType`
-- gerektiğinde `dbo.CustomerRep`
+- `bilnex_sql_server()`
+- `bilnex_customer_reader()`
 
-Bilnex SQL Server üzerinde bu aşamada tablo, alan veya veri değişikliği yapılmayacaktır.
+SQL Server ayarları `apps/crm-web/config.php` içindeki `sql_server` bloğundan okunur. Hassas bilgiler ortam değişkenleriyle verilebilir:
+
+- `BILNEX_SQL_SERVER`
+- `BILNEX_SQL_DATABASE`
+- `BILNEX_SQL_USERNAME`
+- `BILNEX_SQL_PASSWORD`
+- `BILNEX_SQL_TRUST_CERTIFICATE`
+
+## Driver Notu
+
+Canlı bağlantı için PHP tarafında `pdo_sqlsrv` eklentisi gerekir. Eklenti yoksa katman yazma koruması ve yapı olarak hazır kalır, bağlantı çağrısında açık hata verir.
+Yerel testte `dotnet_bridge` açıkken PowerShell/.NET köprüsü kullanılabilir.
+
+## Güvenlik Notu
+
+Bilnex SQL tarafında şema veya veri değişikliği yapılmaz. Bu paket Customer entegrasyonu için okuma katmanıdır.
+Yazma testi yalnızca `BILNEX_SQL_WRITE_TEST=rollback` ortam değişkeniyle çalışır ve test kaydını transaction sonunda geri alır.

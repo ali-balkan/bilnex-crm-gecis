@@ -24,7 +24,9 @@ scripts/
 
 ### `apps/crm-web`
 
-Mevcut PHP CRM uygulamasının taşınacağı ana uygulama klasörüdür. İlk taşıma aşamasında davranış değişmeyecek.
+Mevcut PHP CRM uygulamasının taşınacağı ana uygulama klasörüdür.
+
+İlk taşıma aşamasında davranış değişmeyecek. Mevcut `index.php`, `app`, `assets` ve konfigürasyon dosyaları bu uygulama sınırına alınacak.
 
 ### `packages/database`
 
@@ -49,6 +51,14 @@ Kapsam:
 - CustomerTypeId eşleştirmeleri
 - CRM rol sabitleri
 - ortak formatlama ve validasyon yardımcıları
+
+### `docs`
+
+Geçiş planları, karar kayıtları ve SQL eşleştirme notları burada tutulacak.
+
+### `scripts`
+
+Analiz, yedek, test ve geçiş yardımcı scriptleri burada tutulacak.
 
 ## Entegrasyon Sınırı
 
