@@ -22,6 +22,7 @@ return [
         'password' => getenv('BILNEX_SQL_PASSWORD') ?: ($sqlServerLocal['password'] ?? ''),
         'trust_server_certificate' => (getenv('BILNEX_SQL_TRUST_CERTIFICATE') ?: '1') === '1',
         'dotnet_bridge' => (getenv('BILNEX_SQL_DOTNET_BRIDGE') ?: '1') === '1',
+        'login_timeout' => (int) (getenv('BILNEX_SQL_LOGIN_TIMEOUT') ?: 5),
         'read_only' => true,
     ],
     'initial_admin' => [
