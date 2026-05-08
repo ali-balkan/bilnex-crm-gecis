@@ -1176,21 +1176,25 @@ if ($page === 'dashboard') {
     $monthStart = date('Y-m-01');
     if (can_view_all()) {
         [$dashboardOppScopeSql, $dashboardOppScopeParams] = opportunity_visibility_condition('o');
-        $weekCount = (int) scalar('SELECT COUNT(*) FROM interactions WHERE date(interaction_date) >= :week', [':week' => $weekStart]);
+        [$dashboardInteractionScopeSql, $dashboardInteractionScopeParams] = interaction_visibility_condition('i');
+        $weekCount = (int) scalar('SELECT COUNT(*) FROM interactions i WHERE date(i.interaction_date) >= :week' . $dashboardInteractionScopeSql, $dashboardInteractionScopeParams + [':week' => $weekStart]);
         $wonAmount = (float) scalar('SELECT COALESCE(SUM(o.estimated_amount), 0) FROM opportunities o WHERE o.stage = "Kazanıldı"' . $dashboardOppScopeSql, $dashboardOppScopeParams);
         $openAmount = (float) scalar('SELECT COALESCE(SUM(o.estimated_amount), 0) FROM opportunities o WHERE o.stage NOT IN ("Kazanıldı", "Kaybedildi")' . $dashboardOppScopeSql, $dashboardOppScopeParams);
         $conversionWon = (int) scalar('SELECT COUNT(*) FROM opportunities o WHERE o.stage = "Kazanıldı"' . $dashboardOppScopeSql, $dashboardOppScopeParams);
         $conversionClosed = (int) scalar('SELECT COUNT(*) FROM opportunities o WHERE o.stage IN ("Kazanıldı", "Kaybedildi")' . $dashboardOppScopeSql, $dashboardOppScopeParams);
         $conversionRate = $conversionClosed > 0 ? round(($conversionWon / $conversionClosed) * 100) . '%' : '0%';
-        $totalCompanyCount = company_source() === 'sqlserver'
-            ? bilnex_customer_reader()->countActiveCustomers()
-            : scalar('SELECT COUNT(*) FROM companies');
+        if (company_source() === 'sqlserver') {
+            $totalCompanyCount = bilnex_customer_reader()->countActiveCustomers();
+        } else {
+            [$dashboardCompanyScopeSql, $dashboardCompanyScopeParams] = owned_company_condition('c');
+            $totalCompanyCount = scalar('SELECT COUNT(*) FROM companies c WHERE 1 = 1' . $dashboardCompanyScopeSql, $dashboardCompanyScopeParams);
+        }
         [$dashboardTaskScopeSql, $dashboardTaskScopeParams] = task_visibility_condition('t');
         $dashboardOpenTaskCount = scalar("SELECT COUNT(*) FROM tasks t WHERE t.status = 'Açık'{$dashboardTaskScopeSql}", $dashboardTaskScopeParams);
         $dashboardOverdueTaskCount = scalar("SELECT COUNT(*) FROM tasks t WHERE t.status = 'Açık'{$dashboardTaskScopeSql} AND t.due_date IS NOT NULL AND date(t.due_date) < :today", $dashboardTaskScopeParams + [':today' => $today]);
         $openOpportunityCount = scalar('SELECT COUNT(*) FROM opportunities o WHERE o.stage NOT IN ("Kazanıldı", "Kaybedildi")' . $dashboardOppScopeSql, $dashboardOppScopeParams);
         $cards = [
-            ['Bugünkü Görüşmeler', scalar('SELECT COUNT(*) FROM interactions WHERE date(interaction_date) = :today', [':today' => $today]), 'Bu hafta: ' . $weekCount, 'stat-blue'],
+            ['Bugünkü Görüşmeler', scalar('SELECT COUNT(*) FROM interactions i WHERE date(i.interaction_date) = :today' . $dashboardInteractionScopeSql, $dashboardInteractionScopeParams + [':today' => $today]), 'Bu hafta: ' . $weekCount, 'stat-blue'],
             ['Toplam Bayi Adayı', number_format((float) $totalCompanyCount, 0, ',', '.'), company_source() === 'sqlserver' ? 'SQL Customer kaynağı' : 'Tüm kayıtlar', 'stat-violet'],
             ['Açık Görevler', $dashboardOpenTaskCount, 'Geciken: ' . $dashboardOverdueTaskCount, 'stat-red'],
             ['Açık Fırsatlar', $openOpportunityCount, 'Toplam tutar: ' . money($openAmount), 'stat-cyan'],
@@ -1219,12 +1223,13 @@ if ($page === 'dashboard') {
                 ];
             }, bilnex_customer_reader()->countActiveCustomersByType());
         } else {
-            $statusRows = rows('SELECT status, COUNT(*) total FROM companies GROUP BY status ORDER BY total DESC');
+            [$dashboardCompanyStatusScopeSql, $dashboardCompanyStatusScopeParams] = owned_company_condition('c');
+            $statusRows = rows('SELECT c.status, COUNT(*) total FROM companies c WHERE 1 = 1' . $dashboardCompanyStatusScopeSql . ' GROUP BY c.status ORDER BY total DESC', $dashboardCompanyStatusScopeParams);
         }
         $dashboardStatusRows = compact_metric_rows($statusRows, 'status', 'total', 6);
         $pipeline = rows('SELECT o.stage, COUNT(*) total, COALESCE(SUM(o.estimated_amount), 0) amount FROM opportunities o WHERE 1 = 1' . $dashboardOppScopeSql . ' GROUP BY o.stage ORDER BY CASE o.stage WHEN "Yeni fırsat" THEN 1 WHEN "Görüşme yapılıyor" THEN 2 WHEN "Teklif verildi" THEN 3 WHEN "Sözleşme bekleniyor" THEN 4 WHEN "Kazanıldı" THEN 5 WHEN "Kaybedildi" THEN 6 ELSE 7 END', $dashboardOppScopeParams);
-        $trend = rows('SELECT date(interaction_date) day, COUNT(*) total FROM interactions WHERE date(interaction_date) >= date(:today, "-6 day") GROUP BY date(interaction_date) ORDER BY day', [':today' => $today]);
-        $overdueRows = rows('SELECT c.id, c.name, c.next_followup_date, u.full_name responsible_name FROM companies c LEFT JOIN users u ON u.id = c.responsible_user_id WHERE c.next_followup_date IS NOT NULL AND date(c.next_followup_date) < :today ORDER BY c.next_followup_date ASC LIMIT 8', [':today' => $today]);
+        $trend = rows('SELECT date(i.interaction_date) day, COUNT(*) total FROM interactions i WHERE date(i.interaction_date) >= date(:today, "-6 day")' . $dashboardInteractionScopeSql . ' GROUP BY date(i.interaction_date) ORDER BY day', $dashboardInteractionScopeParams + [':today' => $today]);
+        $overdueTasks = rows("SELECT t.*, c.name company_name, assigner.full_name assigned_by_name, assignee.full_name assigned_to_name FROM tasks t LEFT JOIN companies c ON c.id = t.company_id LEFT JOIN users assigner ON assigner.id = t.assigned_by LEFT JOIN users assignee ON assignee.id = t.assigned_to WHERE t.status = 'Açık'{$dashboardTaskScopeSql} AND t.due_date IS NOT NULL AND date(t.due_date) < :today ORDER BY t.due_date ASC, t.created_at DESC LIMIT 8", $dashboardTaskScopeParams + [':today' => $today]);
         $openOpps = rows('SELECT o.id, o.product_service, o.estimated_amount, o.stage, o.expected_close_date, c.name company_name, u.full_name salesperson_name FROM opportunities o JOIN companies c ON c.id = o.company_id LEFT JOIN users u ON u.id = o.salesperson_id WHERE o.stage NOT IN ("Kazanıldı", "Kaybedildi")' . $dashboardOppScopeSql . ' ORDER BY o.estimated_amount DESC LIMIT 8', $dashboardOppScopeParams);
 
         echo '<section class="dashboard-grid dashboard-main-grid">';
@@ -1260,11 +1265,12 @@ if ($page === 'dashboard') {
         echo '</div></article>';
 
         echo '<article class="panel dashboard-list-card"><div class="section-title"><h2>Geciken Görevler</h2><a class="btn small" href="' . e(app_url('followups', ['date_filter' => 'custom', 'date_to' => $today])) . '">Tüm Gecikenler</a></div><div class="mini-card-list">';
-        foreach ($overdueRows as $row) {
-            echo '<a class="mini-card late" href="' . e(app_url('company_view', ['id' => $row['id']])) . '"><strong>' . e($row['name']) . '</strong><span>' . e($row['responsible_name'] ?: '-') . '</span><small>Takip tarihi: ' . e($row['next_followup_date']) . '</small></a>';
+        foreach ($overdueTasks as $task) {
+            $taskHref = app_url('followups', ['edit_task' => $task['id']]);
+            echo '<a class="mini-card late" href="' . e($taskHref) . '"><strong>' . e($task['title']) . '</strong><span>' . e($task['company_name'] ?: 'Cari seçilmedi') . ' · Atanan: ' . e($task['assigned_to_name'] ?: '-') . '</span><small>Termin: ' . e($task['due_date']) . '</small></a>';
         }
-        if (!$overdueRows) {
-            echo '<p class="muted">Geciken takip yok.</p>';
+        if (!$overdueTasks) {
+            echo '<p class="muted">Geciken görev yok.</p>';
         }
         echo '</div></article>';
 
@@ -2570,12 +2576,11 @@ if ($page === 'reports') {
     render_header('Raporlar');
     $today = date('Y-m-d');
     $selectedAccountType = !empty($_GET['account_type']) ? normalize_company_account_type($_GET['account_type']) : '';
+    $usingSqlServerCompanies = company_source() === 'sqlserver';
     $interactionWhere = ' WHERE 1 = 1';
-    $interactionParams = [];
-    if (!can_view_all()) {
-        $interactionWhere .= ' AND i.user_id = :uid';
-        $interactionParams[':uid'] = current_user()['id'];
-    }
+    [$interactionScopeSql, $interactionScopeParams] = interaction_visibility_condition('i');
+    $interactionWhere .= $interactionScopeSql;
+    $interactionParams = $interactionScopeParams;
     if ($selectedAccountType !== '') {
         $interactionWhere .= ' AND EXISTS (SELECT 1 FROM companies c WHERE c.id = i.company_id AND c.account_type = :interaction_account_type)';
         $interactionParams[':interaction_account_type'] = $selectedAccountType;
@@ -2591,7 +2596,9 @@ if ($page === 'reports') {
     }
     $staffJoin = 'LEFT JOIN interactions i ON i.user_id = u.id';
     $staffWhere = ' WHERE u.active = 1';
-    $staffParams = [];
+    [$staffScopeSql, $staffScopeParams] = user_visibility_condition('u');
+    $staffWhere .= $staffScopeSql;
+    $staffParams = $staffScopeParams;
     if ($reportFrom !== '') {
         $staffJoin .= ' AND date(i.interaction_date) >= :staff_date_from';
         $staffParams[':staff_date_from'] = $reportFrom;
@@ -2600,24 +2607,30 @@ if ($page === 'reports') {
         $staffJoin .= ' AND date(i.interaction_date) <= :staff_date_to';
         $staffParams[':staff_date_to'] = $reportTo;
     }
-    if (!can_view_all()) {
-        $staffWhere .= ' AND u.id = :staff_uid';
-        $staffParams[':staff_uid'] = current_user()['id'];
-    }
     $staff = rows("SELECT u.full_name, COUNT(i.id) total FROM users u {$staffJoin} {$staffWhere} GROUP BY u.id ORDER BY total DESC, u.full_name", $staffParams);
     $daily = rows("SELECT i.interaction_date, c.name company_name, c.account_type company_account_type, u.full_name user_name, i.type, i.result, i.note FROM interactions i JOIN companies c ON c.id = i.company_id LEFT JOIN users u ON u.id = i.user_id {$interactionWhere} ORDER BY i.interaction_date DESC LIMIT 100", $interactionParams);
     $companyScope = ' WHERE 1 = 1';
-    $companyParams = [];
-    if (!can_view_all()) {
-        $companyScope .= ' AND (c.responsible_user_id = :company_report_user_id OR c.created_by = :company_report_user_id)';
-        $companyParams[':company_report_user_id'] = current_user()['id'];
-    }
+    [$companyScopeSql, $companyScopeParams] = owned_company_condition('c');
+    $companyScope .= $companyScopeSql;
+    $companyParams = $companyScopeParams;
     if ($selectedAccountType !== '') {
         $companyScope .= ' AND c.account_type = :company_account_type';
         $companyParams[':company_account_type'] = $selectedAccountType;
     }
     $statusReport = rows("SELECT c.status, COUNT(*) total FROM companies c {$companyScope} GROUP BY c.status ORDER BY total DESC", $companyParams);
-    $typeReport = rows("SELECT c.account_type, COUNT(*) total FROM companies c {$companyScope} GROUP BY c.account_type ORDER BY total DESC", $companyParams);
+    if ($usingSqlServerCompanies) {
+        $typeReport = array_map(static function (array $row): array {
+            return [
+                'account_type' => $row['CustomerTypeName'] ?: sql_customer_type_label((int) ($row['CustomerTypeId'] ?? 0)),
+                'total' => (int) ($row['total'] ?? 0),
+            ];
+        }, bilnex_customer_reader()->countActiveCustomersByType());
+        if ($selectedAccountType !== '') {
+            $typeReport = array_values(array_filter($typeReport, static fn(array $row): bool => normalize_company_account_type($row['account_type'] ?? '') === $selectedAccountType));
+        }
+    } else {
+        $typeReport = rows("SELECT c.account_type, COUNT(*) total FROM companies c {$companyScope} GROUP BY c.account_type ORDER BY total DESC", $companyParams);
+    }
     $oppWhere = ' WHERE 1 = 1';
     [$reportOppScopeSql, $reportOppScopeParams] = opportunity_visibility_condition('o');
     $oppWhere .= $reportOppScopeSql;
@@ -2627,13 +2640,23 @@ if ($page === 'reports') {
         $oppParams[':opp_account_type'] = $selectedAccountType;
     }
     $oppReport = rows("SELECT o.stage, COUNT(*) total, COALESCE(SUM(o.estimated_amount), 0) amount FROM opportunities o {$oppWhere} GROUP BY o.stage ORDER BY total DESC", $oppParams);
-    $overdue = rows("SELECT c.id, c.name, c.account_type, c.next_followup_date, u.full_name responsible_name FROM companies c LEFT JOIN users u ON u.id = c.responsible_user_id {$companyScope} AND c.next_followup_date IS NOT NULL AND date(c.next_followup_date) < :today ORDER BY c.next_followup_date LIMIT 12", $companyParams + [':today' => $today]);
+    $taskWhere = " WHERE t.status = 'Açık'";
+    [$reportTaskScopeSql, $reportTaskScopeParams] = task_visibility_condition('t');
+    $taskWhere .= $reportTaskScopeSql;
+    $taskParams = $reportTaskScopeParams;
+    if ($selectedAccountType !== '') {
+        $taskWhere .= ' AND EXISTS (SELECT 1 FROM companies c WHERE c.id = t.company_id AND c.account_type = :task_account_type)';
+        $taskParams[':task_account_type'] = $selectedAccountType;
+    }
+    $overdue = rows("SELECT t.id, t.title, t.due_date, c.name company_name, c.account_type, assignee.full_name assigned_to_name FROM tasks t LEFT JOIN companies c ON c.id = t.company_id LEFT JOIN users assignee ON assignee.id = t.assigned_to {$taskWhere} AND t.due_date IS NOT NULL AND date(t.due_date) < :today ORDER BY t.due_date LIMIT 12", $taskParams + [':today' => $today]);
     $interactionTrend = rows("SELECT date(i.interaction_date) day, COUNT(*) total FROM interactions i {$interactionWhere} GROUP BY date(i.interaction_date) ORDER BY day DESC LIMIT 14", $interactionParams);
     $interactionTrend = array_reverse($interactionTrend);
     $resultReport = rows("SELECT i.result, COUNT(*) total FROM interactions i {$interactionWhere} GROUP BY i.result ORDER BY total DESC", $interactionParams);
     $totalInteractions = (int) scalar("SELECT COUNT(*) FROM interactions i {$interactionWhere}", $interactionParams);
-    $totalCompanies = (int) scalar("SELECT COUNT(*) FROM companies c {$companyScope}", $companyParams);
-    $totalOverdue = (int) scalar("SELECT COUNT(*) FROM companies c {$companyScope} AND c.next_followup_date IS NOT NULL AND date(c.next_followup_date) < :today", $companyParams + [':today' => $today]);
+    $totalCompanies = $usingSqlServerCompanies
+        ? bilnex_customer_reader()->countActiveCustomers($selectedAccountType !== '' ? company_account_type_sql_id($selectedAccountType) : null)
+        : (int) scalar("SELECT COUNT(*) FROM companies c {$companyScope}", $companyParams);
+    $totalOverdue = (int) scalar("SELECT COUNT(*) FROM tasks t {$taskWhere} AND t.due_date IS NOT NULL AND date(t.due_date) < :today", $taskParams + [':today' => $today]);
     $openOppCount = (int) scalar("SELECT COUNT(*) FROM opportunities o {$oppWhere} AND o.stage NOT IN ('Kazanıldı', 'Kaybedildi')", $oppParams);
     $wonAmount = (float) scalar("SELECT COALESCE(SUM(o.estimated_amount), 0) FROM opportunities o {$oppWhere} AND o.stage = 'Kazanıldı'", $oppParams);
     $lostAmount = (float) scalar("SELECT COALESCE(SUM(o.estimated_amount), 0) FROM opportunities o {$oppWhere} AND o.stage = 'Kaybedildi'", $oppParams);
@@ -2711,9 +2734,9 @@ if ($page === 'reports') {
     <section class="grid-two">
         <article class="panel">
             <div class="section-title"><h2>Geciken takip aksiyonları</h2><a class="btn small" href="<?= e(app_url('followups', ['date_filter' => 'custom', 'date_to' => $today])) ?>">Takip listesi</a></div>
-            <div class="table-wrap"><table><thead><tr><th>Cari</th><th>Cari türü</th><th>Takip</th><th>Sorumlu</th></tr></thead><tbody>
-                <?php foreach ($overdue as $r): ?><tr class="overdue"><td><a href="<?= e(app_url('company_view', ['id' => $r['id']])) ?>"><?= e($r['name']) ?></a></td><td><?= e($r['account_type'] ?? 'İş Ortağı') ?></td><td><?= e($r['next_followup_date']) ?></td><td><?= e($r['responsible_name']) ?></td></tr><?php endforeach; ?>
-                <?php if (!$overdue): ?><tr><td colspan="4" class="muted">Geciken takip yok.</td></tr><?php endif; ?>
+            <div class="table-wrap"><table><thead><tr><th>İş</th><th>Cari</th><th>Cari türü</th><th>Termin</th><th>Atanan</th></tr></thead><tbody>
+                <?php foreach ($overdue as $r): ?><tr class="overdue"><td><a href="<?= e(app_url('followups', ['edit_task' => $r['id']])) ?>"><?= e($r['title']) ?></a></td><td><?= e($r['company_name'] ?? 'Cari seçilmedi') ?></td><td><?= e($r['account_type'] ?? '-') ?></td><td><?= e($r['due_date']) ?></td><td><?= e($r['assigned_to_name'] ?? '-') ?></td></tr><?php endforeach; ?>
+                <?php if (!$overdue): ?><tr><td colspan="5" class="muted">Geciken görev yok.</td></tr><?php endif; ?>
             </tbody></table></div>
         </article>
         <article class="panel">

@@ -741,6 +741,68 @@ function role_database_values(array $roles): array
     return array_values(array_unique($values));
 }
 
+function user_visibility_condition(string $alias = 'u'): array
+{
+    $roles = task_visible_roles_for_current_user();
+    if ($roles === null) {
+        return ['', []];
+    }
+
+    $userId = (int) (current_user()['id'] ?? 0);
+    if ($userId <= 0) {
+        return [' AND 1 = 0', []];
+    }
+
+    $prefix = preg_replace('/[^A-Za-z0-9_]/', '', $alias) ?: 'u';
+    $userParam = ':user_scope_id_' . $prefix;
+    $params = [$userParam => $userId];
+    $conditions = ["{$alias}.id = {$userParam}"];
+
+    $roleValues = role_database_values($roles);
+    if ($roleValues) {
+        $placeholders = [];
+        foreach ($roleValues as $index => $roleValue) {
+            $param = ':user_scope_role_' . $prefix . '_' . $index;
+            $placeholders[] = $param;
+            $params[$param] = $roleValue;
+        }
+        $conditions[] = "{$alias}.role IN (" . implode(', ', $placeholders) . ')';
+    }
+
+    return [' AND (' . implode(' OR ', $conditions) . ')', $params];
+}
+
+function interaction_visibility_condition(string $alias = 'i'): array
+{
+    $roles = task_visible_roles_for_current_user();
+    if ($roles === null) {
+        return ['', []];
+    }
+
+    $userId = (int) (current_user()['id'] ?? 0);
+    if ($userId <= 0) {
+        return [' AND 1 = 0', []];
+    }
+
+    $prefix = preg_replace('/[^A-Za-z0-9_]/', '', $alias) ?: 'i';
+    $userParam = ':interaction_scope_user_' . $prefix;
+    $params = [$userParam => $userId];
+    $conditions = ["{$alias}.user_id = {$userParam}"];
+
+    $roleValues = role_database_values($roles);
+    if ($roleValues) {
+        $placeholders = [];
+        foreach ($roleValues as $index => $roleValue) {
+            $param = ':interaction_scope_role_' . $prefix . '_' . $index;
+            $placeholders[] = $param;
+            $params[$param] = $roleValue;
+        }
+        $conditions[] = "EXISTS (SELECT 1 FROM users interaction_scope_user WHERE interaction_scope_user.id = {$alias}.user_id AND interaction_scope_user.role IN (" . implode(', ', $placeholders) . '))';
+    }
+
+    return [' AND (' . implode(' OR ', $conditions) . ')', $params];
+}
+
 function task_visibility_condition(string $alias = 't'): array
 {
     $roles = task_visible_roles_for_current_user();
@@ -848,27 +910,20 @@ function active_users(): array
 
 function user_can_access_company(int $companyId): bool
 {
-    $stmt = db()->prepare('SELECT responsible_user_id, created_by FROM companies WHERE id = :id');
-    $stmt->execute([':id' => $companyId]);
-    $company = $stmt->fetch();
-    if (!$company) {
+    if ($companyId <= 0) {
         return false;
     }
-    if (can_view_all()) {
-        return true;
-    }
 
-    $userId = (int) (current_user()['id'] ?? 0);
-    return $userId > 0
-        && (
-            (int) ($company['responsible_user_id'] ?? 0) === $userId
-            || (int) ($company['created_by'] ?? 0) === $userId
-        );
+    [$scopeSql, $scopeParams] = owned_company_condition('c');
+    $stmt = db()->prepare("SELECT COUNT(*) FROM companies c WHERE c.id = :id{$scopeSql}");
+    $stmt->execute($scopeParams + [':id' => $companyId]);
+    return (int) $stmt->fetchColumn() > 0;
 }
 
 function owned_company_condition(string $alias = 'c'): array
 {
-    if (can_view_all()) {
+    $roles = task_visible_roles_for_current_user();
+    if ($roles === null) {
         return ['', []];
     }
 
@@ -878,12 +933,29 @@ function owned_company_condition(string $alias = 'c'): array
     }
 
     $prefix = preg_replace('/[^A-Za-z0-9_]/', '', $alias) ?: 'c';
-    $param = ':scope_user_id_' . $prefix;
-
-    return [
-        " AND ({$alias}.responsible_user_id = {$param} OR {$alias}.created_by = {$param})",
-        [$param => $userId],
+    $responsibleParam = ':company_scope_responsible_' . $prefix;
+    $createdParam = ':company_scope_created_' . $prefix;
+    $params = [
+        $responsibleParam => $userId,
+        $createdParam => $userId,
     ];
+    $conditions = [
+        "{$alias}.responsible_user_id = {$responsibleParam}",
+        "{$alias}.created_by = {$createdParam}",
+    ];
+
+    $roleValues = role_database_values($roles);
+    if ($roleValues) {
+        $placeholders = [];
+        foreach ($roleValues as $index => $roleValue) {
+            $param = ':company_scope_role_' . $prefix . '_' . $index;
+            $placeholders[] = $param;
+            $params[$param] = $roleValue;
+        }
+        $conditions[] = "EXISTS (SELECT 1 FROM users company_scope_user WHERE company_scope_user.id IN ({$alias}.responsible_user_id, {$alias}.created_by) AND company_scope_user.role IN (" . implode(', ', $placeholders) . '))';
+    }
+
+    return [' AND (' . implode(' OR ', $conditions) . ')', $params];
 }
 
 function selected($actual, $expected): string
