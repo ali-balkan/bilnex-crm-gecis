@@ -446,6 +446,26 @@ label {
     font-weight: 600;
 }
 
+.form-field {
+    display: grid;
+    gap: 7px;
+}
+
+.form-field > label {
+    display: block;
+}
+
+.field-action-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+}
+
+.field-action-row .btn {
+    white-space: nowrap;
+}
+
 input, select, textarea {
     width: 100%;
     min-height: 42px;
@@ -1379,7 +1399,7 @@ dialog.modal::backdrop {
     .topbar, .detail-head, .actions, .section-title, .report-hero, .field-hero { align-items: stretch; flex-direction: column; }
     .report-actions, .quick-actions { justify-content: stretch; }
     .report-actions .btn, .quick-actions .btn { width: 100%; }
-    .stats-grid, .grid-two, .form-grid, .filters, .import-panel, .dashboard-grid, .pipeline, .field-focus-grid, .analytics-split, .task-command, .task-stats, .task-meta, .sql-customer-picker, .sql-search-row { grid-template-columns: 1fr; }
+    .stats-grid, .grid-two, .form-grid, .filters, .import-panel, .dashboard-grid, .pipeline, .field-focus-grid, .analytics-split, .task-command, .task-stats, .task-meta, .sql-customer-picker, .sql-search-row, .field-action-row { grid-template-columns: 1fr; }
     .wide-panel { grid-column: auto; }
     .meta { grid-template-columns: 1fr; }
     h1 { font-size: 23px; }

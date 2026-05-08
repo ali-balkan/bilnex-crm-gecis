@@ -710,6 +710,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($page === 'save_company') {
         $id = (int) ($_POST['id'] ?? 0);
+        $returnTo = ($_POST['return_to'] ?? '') === 'opportunity_form' ? 'opportunity_form' : '';
+        $companyFormParams = $returnTo !== '' ? ['return_to' => $returnTo] : [];
         if ($id > 0) {
             require_company_access($id);
         }
@@ -741,7 +743,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         if ($data[':name'] === '') {
             flash('Cari adı zorunludur.', 'danger');
-            redirect_to('company_form', $id > 0 ? ['id' => $id] : []);
+            redirect_to('company_form', $id > 0 ? ['id' => $id] + $companyFormParams : $companyFormParams);
         }
         if (company_source() === 'sqlserver' && $id === 0) {
             try {
@@ -757,12 +759,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'tax_no' => $data[':tax_no'],
                     'description' => $data[':description'],
                 ]);
+                $data[':sql_customer_id'] = (int) $created['id'];
+                $data[':account_code'] = (string) $created['code'];
+                $data[':source'] = 'SQL Server Customer';
+                $data[':created_by'] = current_user()['id'];
+                db()->prepare('INSERT INTO companies (name, sql_customer_id, account_type, account_code, contact_person, phone, email, city, district, address, tax_no, balance_amount, balance_side, status, source, responsible_user_id, description, created_by) VALUES (:name, :sql_customer_id, :account_type, :account_code, :contact_person, :phone, :email, :city, :district, :address, :tax_no, :balance_amount, :balance_side, :status, :source, :responsible_user_id, :description, :created_by)')->execute($data);
+                $id = (int) db()->lastInsertId();
                 flash('Cari SQL Server kaydına yazıldı. Cari kodu: ' . $created['code']);
+                if ($returnTo === 'opportunity_form') {
+                    redirect_to('opportunity_form', ['company_id' => $id]);
+                }
                 redirect_to('companies', ['account_type' => $data[':account_type']]);
             } catch (Throwable $exception) {
                 error_log('[Bilnex CRM] SQL Server Customer write failed: ' . $exception->getMessage());
                 flash('Cari SQL Server kaydına yazılamadı: ' . $exception->getMessage(), 'danger');
-                redirect_to('company_form');
+                redirect_to('company_form', $companyFormParams);
             }
         }
         if ($id > 0) {
@@ -774,6 +785,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             db()->prepare('INSERT INTO companies (name, sql_customer_id, account_type, account_code, contact_person, phone, email, city, district, address, tax_no, balance_amount, balance_side, status, source, responsible_user_id, description, created_by) VALUES (:name, :sql_customer_id, :account_type, :account_code, :contact_person, :phone, :email, :city, :district, :address, :tax_no, :balance_amount, :balance_side, :status, :source, :responsible_user_id, :description, :created_by)')->execute($data);
             $id = (int) db()->lastInsertId();
             flash('Cari kartı oluşturuldu.');
+        }
+        if ($returnTo === 'opportunity_form') {
+            redirect_to('opportunity_form', ['company_id' => $id]);
         }
         redirect_to('company_view', ['id' => $id]);
     }
@@ -1291,6 +1305,7 @@ if ($page === 'company_form') {
     $id = (int) ($_GET['id'] ?? 0);
     $company = null;
     $usesSqlCustomerWrite = company_source() === 'sqlserver';
+    $returnTo = ($_GET['return_to'] ?? '') === 'opportunity_form' ? 'opportunity_form' : '';
     if ($id > 0) {
         require_company_access($id);
         $company = rows('SELECT * FROM companies WHERE id = :id', [':id' => $id])[0] ?? null;
@@ -1300,6 +1315,10 @@ if ($page === 'company_form') {
     <form class="panel form-grid" method="post" action="<?= e(app_url('save_company')) ?>">
         <?= csrf_field() ?>
         <input type="hidden" name="id" value="<?= e($company['id'] ?? 0) ?>">
+        <input type="hidden" name="return_to" value="<?= e($returnTo) ?>">
+        <?php if ($returnTo === 'opportunity_form'): ?>
+            <div class="alert wide">Cari kaydedilince Yeni Satış Fırsatı ekranına seçili olarak dönecek.</div>
+        <?php endif; ?>
         <label>Cari adı <input name="name" value="<?= e($company['name'] ?? '') ?>" required></label>
         <label>SQL Customer Id <input name="sql_customer_id" inputmode="numeric" value="<?= e($company['sql_customer_id'] ?? '') ?>" placeholder="Bilnex Customer.Id"></label>
         <label>Cari türü
@@ -2094,14 +2113,18 @@ if ($page === 'opportunity_form') {
     <form class="panel form-grid" method="post" action="<?= e(app_url('save_opportunity')) ?>">
         <?= csrf_field() ?>
         <input type="hidden" name="id" value="<?= e($opp['id'] ?? 0) ?>">
-        <label>İlgili cari
-            <input name="company_lookup" list="company_options" value="<?= e($selectedCompany ? company_lookup_label($selectedCompany) : '') ?>" placeholder="Cari kodu veya firma adı yazın..." required autocomplete="off">
+        <div class="form-field">
+            <label for="company_lookup">İlgili cari</label>
+            <div class="field-action-row">
+                <input id="company_lookup" name="company_lookup" list="company_options" value="<?= e($selectedCompany ? company_lookup_label($selectedCompany) : '') ?>" placeholder="Cari kodu veya firma adı yazın..." required autocomplete="off">
+                <a class="btn" href="<?= e(app_url('company_form', ['return_to' => 'opportunity_form'])) ?>">Yeni cari ekle</a>
+            </div>
             <datalist id="company_options">
                 <?php foreach ($companies as $company): ?>
                     <option value="<?= e(company_lookup_label($company)) ?>"></option>
                 <?php endforeach; ?>
             </datalist>
-        </label>
+        </div>
         <label>Satışçı
             <select name="salesperson_id"<?= can_view_all() ? '' : ' disabled' ?>>
                 <?php foreach (active_users() as $user): ?>
