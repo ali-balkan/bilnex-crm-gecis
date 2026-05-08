@@ -17,7 +17,7 @@ RUN apt-get update \
     && apt-get update \
     && apt-get install -y --no-install-recommends msodbcsql18 \
     && docker-php-ext-install pdo pdo_sqlite zip \
-    && pecl install sqlsrv pdo_sqlsrv \
+    && pecl install sqlsrv-5.12.0 pdo_sqlsrv-5.12.0 \
     && docker-php-ext-enable sqlsrv pdo_sqlsrv \
     && a2enmod rewrite headers \
     && sed -ri "s!/var/www/html!${APACHE_DOCUMENT_ROOT}!g" /etc/apache2/sites-available/*.conf /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf \
