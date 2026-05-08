@@ -1136,7 +1136,12 @@ if ($page === 'companies') {
     <?php if ($usingSqlServerCompanies): ?>
         <div class="alert">Bayi/Firma listesi SQL Server dbo.Customer kaynağından sadece okuma modunda gösteriliyor.</div>
         <?php if ($sqlCustomerReadError): ?>
-            <div class="alert alert-danger">SQL Server Customer kaynagi okunamadi. Coolify ortam degiskenlerinde BILNEX_SQL_SERVER, BILNEX_SQL_DATABASE, kullanici ve sifreyi kontrol edin.</div>
+            <div class="alert alert-danger">
+                SQL Server Customer kaynagi okunamadi. Coolify ortam degiskenlerinde BILNEX_SQL_SERVER, BILNEX_SQL_DATABASE, kullanici ve sifreyi kontrol edin.
+                <?php if (can_administer_users()): ?>
+                    <br><small><?= e($sqlCustomerReadError) ?></small>
+                <?php endif; ?>
+            </div>
         <?php endif; ?>
     <?php endif; ?>
     <form class="panel import-panel" method="post" action="<?= e(app_url('import_companies')) ?>" enctype="multipart/form-data">

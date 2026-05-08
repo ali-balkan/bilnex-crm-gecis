@@ -91,8 +91,9 @@ final class ReadOnlySqlServerConnection
             }
         }
 
+        $detail = $lastException instanceof PDOException ? ' Son hata: ' . $lastException->getMessage() : '';
         throw new RuntimeException(
-            'SQL Server baglantisi kurulamadi. BILNEX_SQL_SERVER, kullanici/sifre ve container network ayarlarini kontrol edin.',
+            'SQL Server baglantisi kurulamadi. Denenen adresler: ' . implode(', ', $serverCandidates) . '.' . $detail,
             0,
             $lastException
         );
