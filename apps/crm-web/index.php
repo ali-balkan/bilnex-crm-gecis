@@ -899,10 +899,7 @@ if ($page === 'dashboard') {
     $weekStart = (new DateTimeImmutable('monday this week'))->format('Y-m-d');
     $monthStart = date('Y-m-01');
     if (can_view_all()) {
-        $lastWeekStart = (new DateTimeImmutable('monday last week'))->format('Y-m-d');
-        $lastWeekEnd = (new DateTimeImmutable('sunday last week'))->format('Y-m-d');
         $weekCount = (int) scalar('SELECT COUNT(*) FROM interactions WHERE date(interaction_date) >= :week', [':week' => $weekStart]);
-        $lastWeekCount = (int) scalar('SELECT COUNT(*) FROM interactions WHERE date(interaction_date) BETWEEN :start AND :end', [':start' => $lastWeekStart, ':end' => $lastWeekEnd]);
         $wonAmount = (float) scalar('SELECT COALESCE(SUM(estimated_amount), 0) FROM opportunities WHERE stage = "Kazanıldı"');
         $openAmount = (float) scalar('SELECT COALESCE(SUM(estimated_amount), 0) FROM opportunities WHERE stage NOT IN ("Kazanıldı", "Kaybedildi")');
         $conversionWon = (int) scalar('SELECT COUNT(*) FROM opportunities WHERE stage = "Kazanıldı"');
@@ -913,17 +910,17 @@ if ($page === 'dashboard') {
             : scalar('SELECT COUNT(*) FROM companies');
         [$dashboardTaskScopeSql, $dashboardTaskScopeParams] = task_visibility_condition('t');
         $dashboardOpenTaskCount = scalar("SELECT COUNT(*) FROM tasks t WHERE t.status = 'Açık'{$dashboardTaskScopeSql}", $dashboardTaskScopeParams);
+        $dashboardOverdueTaskCount = scalar("SELECT COUNT(*) FROM tasks t WHERE t.status = 'Açık'{$dashboardTaskScopeSql} AND t.due_date IS NOT NULL AND date(t.due_date) < :today", $dashboardTaskScopeParams + [':today' => $today]);
+        $openOpportunityCount = scalar('SELECT COUNT(*) FROM opportunities WHERE stage NOT IN ("Kazanıldı", "Kaybedildi")');
         $cards = [
-            ['Bugünkü görüşme', scalar('SELECT COUNT(*) FROM interactions WHERE date(interaction_date) = :today', [':today' => $today]), 'Günlük aktivite', ''],
-            ['Bu haftaki görüşme', $weekCount, 'Geçen hafta: ' . $lastWeekCount, ''],
-            ['Toplam bayi adayı', $totalCompanyCount, company_source() === 'sqlserver' ? 'SQL Customer kaynağı' : 'Tüm kayıtlar', ''],
-            ['Açık işler', $dashboardOpenTaskCount, 'Atanan işler', 'danger-stat'],
-            ['Açık fırsat', scalar('SELECT COUNT(*) FROM opportunities WHERE stage NOT IN ("Kazanıldı", "Kaybedildi")'), money($openAmount), ''],
-            ['Kazanılan satış', money($wonAmount), 'Kapanış oranı: ' . $conversionRate, 'success-stat'],
+            ['Bugünkü Görüşmeler', scalar('SELECT COUNT(*) FROM interactions WHERE date(interaction_date) = :today', [':today' => $today]), 'Bu hafta: ' . $weekCount, 'stat-blue'],
+            ['Toplam Bayi Adayı', number_format((float) $totalCompanyCount, 0, ',', '.'), company_source() === 'sqlserver' ? 'SQL Customer kaynağı' : 'Tüm kayıtlar', 'stat-violet'],
+            ['Açık Görevler', $dashboardOpenTaskCount, 'Geciken: ' . $dashboardOverdueTaskCount, 'stat-red'],
+            ['Açık Fırsatlar', $openOpportunityCount, 'Toplam tutar: ' . money($openAmount), 'stat-cyan'],
+            ['Kazanılan Satış', $conversionWon, 'Toplam tutar: ' . money($wonAmount), 'stat-green'],
         ];
         $cardLinks = [
             app_url('reports', ['date_filter' => 'today']),
-            app_url('reports', ['date_filter' => 'week']),
             app_url('companies'),
             app_url('followups', ['status' => 'Açık']),
             app_url('opportunities', ['stage_group' => 'open']),
@@ -936,16 +933,7 @@ if ($page === 'dashboard') {
         echo '</section>';
 
         $dashboardTasks = rows("SELECT t.*, assigner.full_name assigned_by_name, assignee.full_name assigned_to_name FROM tasks t LEFT JOIN users assigner ON assigner.id = t.assigned_by LEFT JOIN users assignee ON assignee.id = t.assigned_to WHERE t.status = 'Açık'{$dashboardTaskScopeSql} ORDER BY COALESCE(t.due_date, '9999-12-31'), t.created_at DESC LIMIT 10", $dashboardTaskScopeParams);
-        echo '<section class="panel"><div class="section-title"><h2>Takip edilecek işler</h2><a class="btn small" href="' . e(app_url('followups')) . '">İş listesi</a></div><div class="table-wrap"><table><thead><tr><th>İş</th><th>Atayan</th><th>Atanan</th><th>Termin</th></tr></thead><tbody>';
-        foreach ($dashboardTasks as $task) {
-            echo '<tr><td><strong>' . e($task['title']) . '</strong></td><td>' . e($task['assigned_by_name']) . '</td><td>' . e($task['assigned_to_name']) . '</td><td>' . e($task['due_date']) . '</td></tr>';
-        }
-        if (!$dashboardTasks) {
-            echo '<tr><td colspan="4" class="muted">Açık iş yok.</td></tr>';
-        }
-        echo '</tbody></table></div></section>';
 
-        $staff = rows('SELECT u.full_name, COUNT(i.id) total FROM users u LEFT JOIN interactions i ON i.user_id = u.id AND date(i.interaction_date) >= :week WHERE u.active = 1 GROUP BY u.id ORDER BY total DESC, u.full_name LIMIT 8', [':week' => $weekStart]);
         if (company_source() === 'sqlserver') {
             $statusRows = array_map(static function (array $row): array {
                 return [
@@ -961,18 +949,18 @@ if ($page === 'dashboard') {
         $overdueRows = rows('SELECT c.id, c.name, c.next_followup_date, u.full_name responsible_name FROM companies c LEFT JOIN users u ON u.id = c.responsible_user_id WHERE c.next_followup_date IS NOT NULL AND date(c.next_followup_date) < :today ORDER BY c.next_followup_date ASC LIMIT 8', [':today' => $today]);
         $openOpps = rows('SELECT o.id, o.product_service, o.estimated_amount, o.stage, o.expected_close_date, c.name company_name, u.full_name salesperson_name FROM opportunities o JOIN companies c ON c.id = o.company_id LEFT JOIN users u ON u.id = o.salesperson_id WHERE o.stage NOT IN ("Kazanıldı", "Kaybedildi") ORDER BY o.estimated_amount DESC LIMIT 8');
 
-        echo '<section class="dashboard-grid">';
-        echo '<article class="panel chart-panel"><div class="section-title"><h2>Personel bazlı haftalık görüşme</h2><a class="btn small" href="' . e(app_url('reports', ['date_filter' => 'week'])) . '">Raporu aç</a></div>';
-        render_bar_list($staff, 'full_name', 'total');
+        echo '<section class="dashboard-grid dashboard-main-grid">';
+        echo '<article class="panel chart-panel"><div class="section-title"><h2>Görüşme Trendi</h2><a class="btn small" href="' . e(app_url('reports', ['date_filter' => 'week'])) . '">Son 7 gün</a></div>';
+        render_trend_chart($trend, 'day', 'total');
         echo '</article>';
 
-        echo '<article class="panel chart-panel"><div class="section-title"><h2>Cari türü dağılımı</h2><a class="btn small" href="' . e(app_url('companies')) . '">Liste</a></div><div class="analytics-split">';
+        echo '<article class="panel chart-panel"><div class="section-title"><h2>Bayi Durum Dağılımı</h2><a class="btn small" href="' . e(app_url('companies')) . '">Detaylar</a></div><div class="analytics-split">';
         render_donut_chart($statusRows, 'status', 'total');
         render_linked_bar_list($statusRows, 'status', 'total', static fn($row) => app_url('companies', ['account_type' => $row['status']]));
         echo '</div>';
         echo '</article>';
 
-        echo '<article class="panel chart-panel wide-panel"><div class="section-title"><h2>Satış pipeline</h2><a class="btn small" href="' . e(app_url('opportunities')) . '">Fırsatlar</a></div>';
+        echo '<article class="panel chart-panel wide-panel"><div class="section-title"><h2>Satış Pipeline</h2><a class="btn small" href="' . e(app_url('opportunities')) . '">Fırsatlar</a></div>';
         echo '<div class="pipeline">';
         foreach ($pipeline as $row) {
             echo '<div class="pipeline-step"><span>' . e($row['stage']) . '</span><strong>' . e($row['total']) . '</strong><small>' . e(money($row['amount'])) . '</small></div>';
@@ -981,34 +969,41 @@ if ($page === 'dashboard') {
             echo '<p class="muted">Satış fırsatı yok.</p>';
         }
         echo '</div></article>';
-
-        echo '<article class="panel chart-panel"><h2>Son 7 gün görüşme trendi</h2>';
-        render_trend_chart($trend, 'day', 'total');
-        echo '</article>';
-
-        echo '<article class="panel chart-panel"><h2>Satış aşaması tutarları</h2>';
-        render_amount_bar_list($pipeline, 'stage', 'total', 'amount');
-        echo '</article>';
         echo '</section>';
 
-        echo '<section class="grid-two">';
-        echo '<article class="panel"><div class="section-title"><h2>Geciken takipler</h2><a class="btn small" href="' . e(app_url('followups', ['date_filter' => 'custom', 'date_to' => $today])) . '">Takipleri aç</a></div><div class="table-wrap"><table><thead><tr><th>Cari</th><th>Sorumlu</th><th>Takip tarihi</th></tr></thead><tbody>';
+        echo '<section class="dashboard-list-grid">';
+        echo '<article class="panel dashboard-list-card"><div class="section-title"><h2>Yaklaşan Görevler</h2><a class="btn small" href="' . e(app_url('followups')) . '">Tüm Görevler</a></div><div class="mini-card-list">';
+        foreach (array_slice($dashboardTasks, 0, 4) as $task) {
+            echo '<a class="mini-card" href="' . e(app_url('followups')) . '"><strong>' . e($task['title']) . '</strong><span>Atayan: ' . e($task['assigned_by_name'] ?: '-') . ' · Atanan: ' . e($task['assigned_to_name'] ?: '-') . '</span><small>Termin: ' . e($task['due_date'] ?: '-') . '</small></a>';
+        }
+        if (!$dashboardTasks) {
+            echo '<p class="muted">Açık görev yok.</p>';
+        }
+        echo '</div></article>';
+
+        echo '<article class="panel dashboard-list-card"><div class="section-title"><h2>Geciken Görevler</h2><a class="btn small" href="' . e(app_url('followups', ['date_filter' => 'custom', 'date_to' => $today])) . '">Tüm Gecikenler</a></div><div class="mini-card-list">';
         foreach ($overdueRows as $row) {
-            echo '<tr class="overdue"><td><a href="' . e(app_url('company_view', ['id' => $row['id']])) . '">' . e($row['name']) . '</a></td><td>' . e($row['responsible_name']) . '</td><td>' . e($row['next_followup_date']) . '</td></tr>';
+            echo '<a class="mini-card late" href="' . e(app_url('company_view', ['id' => $row['id']])) . '"><strong>' . e($row['name']) . '</strong><span>' . e($row['responsible_name'] ?: '-') . '</span><small>Takip tarihi: ' . e($row['next_followup_date']) . '</small></a>';
         }
         if (!$overdueRows) {
-            echo '<tr><td colspan="3" class="muted">Geciken takip yok.</td></tr>';
+            echo '<p class="muted">Geciken takip yok.</p>';
         }
-        echo '</tbody></table></div></article>';
+        echo '</div></article>';
 
-        echo '<article class="panel"><div class="section-title"><h2>En yüksek açık fırsatlar</h2><a class="btn small" href="' . e(app_url('opportunities')) . '">Tümünü gör</a></div><div class="table-wrap"><table><thead><tr><th>Cari</th><th>Fırsat</th><th>Aşama</th><th>Tutar</th></tr></thead><tbody>';
-        foreach ($openOpps as $row) {
-            echo '<tr><td>' . e($row['company_name']) . '<small>' . e($row['salesperson_name']) . '</small></td><td>' . e($row['product_service']) . '</td><td>' . e($row['stage']) . '</td><td>' . e(money($row['estimated_amount'])) . '</td></tr>';
+        echo '<article class="panel dashboard-list-card"><div class="section-title"><h2>Açık Fırsatlar</h2><a class="btn small" href="' . e(app_url('opportunities')) . '">Tüm Fırsatlar</a></div><div class="mini-card-list">';
+        foreach (array_slice($openOpps, 0, 4) as $row) {
+            echo '<a class="mini-card" href="' . e(app_url('opportunity_form', ['id' => $row['id']])) . '"><strong>' . e($row['company_name']) . '</strong><span>' . e($row['product_service']) . ' · ' . e($row['stage']) . '</span><small>' . e(money($row['estimated_amount'])) . '</small></a>';
         }
         if (!$openOpps) {
-            echo '<tr><td colspan="4" class="muted">Açık fırsat yok.</td></tr>';
+            echo '<p class="muted">Açık fırsat yok.</p>';
         }
-        echo '</tbody></table></div></article>';
+        echo '</div></article>';
+
+        echo '<article class="panel dashboard-list-card"><div class="section-title"><h2>Hatırlatmalar</h2><a class="btn small" href="' . e(app_url('reports')) . '">Raporlar</a></div><div class="reminder-list">';
+        echo '<a href="' . e(app_url('followups', ['status' => 'Açık'])) . '"><strong>' . e($dashboardOpenTaskCount) . '</strong><span>açık görev takip bekliyor</span></a>';
+        echo '<a href="' . e(app_url('followups', ['date_filter' => 'custom', 'date_to' => $today, 'status' => 'Açık'])) . '"><strong>' . e($dashboardOverdueTaskCount) . '</strong><span>görev gecikmiş görünüyor</span></a>';
+        echo '<a href="' . e(app_url('opportunities', ['stage_group' => 'open'])) . '"><strong>' . e($openOpportunityCount) . '</strong><span>açık satış fırsatı var</span></a>';
+        echo '</div></article>';
         echo '</section>';
     } else {
         $uid = current_user()['id'];
