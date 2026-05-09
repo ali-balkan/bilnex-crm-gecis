@@ -1265,6 +1265,37 @@ input[list] {
     margin-bottom: 14px;
 }
 
+.view-switch {
+    display: inline-flex;
+    gap: 2px;
+    padding: 3px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #eef5fb;
+}
+
+.view-switch a {
+    min-height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 7px 13px;
+    border-radius: 6px;
+    color: var(--muted);
+    font-weight: 800;
+}
+
+.view-switch a:hover {
+    color: var(--primary-dark);
+    text-decoration: none;
+}
+
+.view-switch a.active {
+    background: #fff;
+    color: var(--primary-dark);
+    box-shadow: 0 4px 12px rgba(6, 33, 72, .08);
+}
+
 .filters {
     display: grid;
     grid-template-columns: minmax(240px, 1.35fr) repeat(auto-fit, minmax(150px, 1fr));
@@ -1503,6 +1534,12 @@ tr[data-href]:hover td { background: #f3f9fe; }
     border-radius: var(--radius);
     padding: 12px;
     min-height: 180px;
+    transition: border-color .16s ease, background .16s ease;
+}
+
+.kanban-column.drag-over {
+    background: #eef8ff;
+    border-color: var(--primary);
 }
 
 .kanban-column h3 {
@@ -1519,6 +1556,12 @@ tr[data-href]:hover td { background: #f3f9fe; }
     border: 1px solid var(--line);
     box-shadow: 0 8px 18px rgba(6, 33, 72, .05);
     margin-bottom: 10px;
+    cursor: grab;
+}
+
+.kanban-card.dragging {
+    cursor: grabbing;
+    opacity: .62;
 }
 
 dialog.modal {
@@ -1874,6 +1917,97 @@ dialog.modal::backdrop {
     overflow: hidden;
 }
 
+.task-table-wrap {
+    max-height: 620px;
+    overflow: auto;
+}
+
+.task-table {
+    min-width: 1120px;
+    table-layout: fixed;
+}
+
+.task-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #fff;
+}
+
+.task-table th:nth-child(1) { width: 120px; }
+.task-table th:nth-child(2) { width: 260px; }
+.task-table th:nth-child(3) { width: 220px; }
+.task-table th:nth-child(4),
+.task-table th:nth-child(5) { width: 150px; }
+.task-table th:nth-child(6) { width: 130px; }
+.task-table th:nth-child(7) { width: 105px; }
+.task-table th:nth-child(8) { width: 300px; }
+
+.task-table td {
+    vertical-align: middle;
+}
+
+.task-row.assigned-to-me {
+    box-shadow: inset 4px 0 0 var(--primary);
+    background: #f6fbff;
+}
+
+.task-row.assigned-by-me {
+    box-shadow: inset 4px 0 0 var(--warning);
+    background: #fffaf0;
+}
+
+.task-row.overdue-task {
+    box-shadow: inset 4px 0 0 var(--danger);
+    background: #fff7f6;
+}
+
+.task-row.completed-task {
+    opacity: .72;
+}
+
+.task-title-cell strong,
+.task-title-cell small,
+.task-table td small {
+    display: block;
+}
+
+.task-title-cell strong,
+.task-table td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.task-title-cell small,
+.task-table td small {
+    color: var(--muted);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.task-actions-cell {
+    white-space: nowrap;
+}
+
+.task-actions-cell .muted {
+    margin: 0;
+    font-size: 12px;
+    white-space: normal;
+}
+
+.task-actions-cell .task-complete-form {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 0;
+}
+
+.task-actions-cell .task-complete-form input {
+    width: 150px;
+}
+
 .task-list {
     display: grid;
     gap: 12px;
@@ -2091,6 +2225,16 @@ dialog.modal::backdrop {
     gap: 18px;
 }
 
+.mini-filter-form {
+    margin: 14px 0;
+}
+
+.mini-filter-form label {
+    display: grid;
+    gap: 6px;
+    font-weight: 700;
+}
+
 .interaction-mini-charts h3 {
     margin: 0 0 10px;
     color: var(--primary-dark);
@@ -2139,6 +2283,42 @@ dialog.modal::backdrop {
 .interaction-list {
     display: grid;
     gap: 12px;
+}
+
+.compact-table-wrap {
+    overflow-x: auto;
+}
+
+.compact-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.compact-table th,
+.compact-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+    vertical-align: top;
+}
+
+.compact-table th {
+    font-size: 12px;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.compact-table td small {
+    display: block;
+    margin-top: 3px;
+    color: var(--muted);
+}
+
+.interaction-table .truncate-cell {
+    max-width: 360px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .interaction-card {

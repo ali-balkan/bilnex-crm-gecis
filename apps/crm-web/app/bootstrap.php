@@ -311,6 +311,22 @@ function display_tax_no(?string $value): string
     return in_array(strlen($digits), [10, 11], true) ? $digits : '';
 }
 
+function valid_display_email(?string $value): string
+{
+    $value = trim((string) $value);
+    return filter_var($value, FILTER_VALIDATE_EMAIL) ? $value : '';
+}
+
+function display_email(?string $value): string
+{
+    $email = valid_display_email($value);
+    if ($email !== '') {
+        return $email;
+    }
+
+    return valid_display_email(bilnex_decrypt_contact_value($value));
+}
+
 function sql_customer_row_to_company_row(array $row): array
 {
     $address = trim(implode(' ', array_filter([
@@ -326,7 +342,7 @@ function sql_customer_row_to_company_row(array $row): array
         'account_type' => sql_customer_type_label((int) ($row['CustomerTypeId'] ?? 0)),
         'contact_person' => $row['Name2'] ?? '',
         'phone' => display_phone($row['Phone'] ?? ''),
-        'email' => $row['Email'] ?? '',
+        'email' => display_email($row['Email'] ?? ''),
         'city' => $row['City'] ?? '',
         'district' => $row['District'] ?? '',
         'address' => $address,
@@ -345,11 +361,9 @@ function sql_customer_row_to_company_row(array $row): array
 
 function sql_customer_lookup_label(array $row): string
 {
-    $code = trim((string) ($row['account_code'] ?? $row['Code'] ?? ''));
     $name = trim((string) ($row['name'] ?? $row['Name1'] ?? ''));
     $type = trim((string) ($row['account_type'] ?? ''));
-    $prefix = $code !== '' ? $code . ' - ' : '';
-    return 'SQL #' . (int) ($row['sql_customer_id'] ?? $row['id'] ?? $row['Id'] ?? 0) . ' | ' . $prefix . $name . ($type !== '' ? ' - ' . $type : '');
+    return ($name !== '' ? $name : 'Cari') . ($type !== '' ? ' - ' . $type : '');
 }
 
 function ensure_local_company_for_sql_customer(int $sqlCustomerId, ?int $userId = null): ?int
@@ -366,7 +380,7 @@ function ensure_local_company_for_sql_customer(int $sqlCustomerId, ?int $userId 
     $customer = sql_customer_row_to_company_row($rawCustomer);
     $name = trim((string) $customer['name']);
     if ($name === '') {
-        $name = 'SQL Customer #' . $sqlCustomerId;
+        $name = 'Cari';
     }
 
     $existingId = (int) scalar('SELECT id FROM companies WHERE sql_customer_id = :sql_customer_id ORDER BY id LIMIT 1', [
@@ -392,8 +406,10 @@ function ensure_local_company_for_sql_customer(int $sqlCustomerId, ?int $userId 
     ];
 
     if ($existingId > 0) {
-        $data[':id'] = $existingId;
-        db()->prepare('UPDATE companies SET name = :name, account_type = :account_type, account_code = :account_code, contact_person = :contact_person, phone = :phone, email = :email, city = :city, district = :district, address = :address, tax_no = :tax_no, tax_office = :tax_office, tax_office_code = :tax_office_code, status = :status, source = :source, responsible_user_id = COALESCE(responsible_user_id, :responsible_user_id), updated_at = CURRENT_TIMESTAMP WHERE id = :id')->execute($data);
+        $updateData = $data;
+        unset($updateData[':sql_customer_id']);
+        $updateData[':id'] = $existingId;
+        db()->prepare('UPDATE companies SET name = :name, account_type = :account_type, account_code = :account_code, contact_person = :contact_person, phone = :phone, email = :email, city = :city, district = :district, address = :address, tax_no = :tax_no, tax_office = :tax_office, tax_office_code = :tax_office_code, status = :status, source = :source, responsible_user_id = COALESCE(responsible_user_id, :responsible_user_id), updated_at = CURRENT_TIMESTAMP WHERE id = :id')->execute($updateData);
         return $existingId;
     }
 
@@ -822,7 +838,9 @@ function task_statuses(): array
 
 function can_manage_users(): bool
 {
-    return normalize_role(current_user()['role'] ?? null) === ROLE_ADMIN;
+    $user = current_user();
+    return normalize_role($user['role'] ?? null) === ROLE_ADMIN
+        && strtolower((string) ($user['username'] ?? '')) === 'superadmin';
 }
 
 function can_view_all(): bool
@@ -1016,13 +1034,31 @@ function user_can_access_opportunity(int $opportunityId): bool
 function can_complete_task(array $task): bool
 {
     $userId = (int) (current_user()['id'] ?? 0);
-    return normalize_role(current_user()['role'] ?? null) === ROLE_ADMIN
-        || (int) ($task['assigned_to'] ?? 0) === $userId;
+    return $userId > 0 && (int) ($task['assigned_to'] ?? 0) === $userId;
 }
 
 function active_users(): array
 {
     return db()->query('SELECT id, full_name, username, role FROM users WHERE active = 1 ORDER BY full_name')->fetchAll();
+}
+
+function interaction_scope_users(): array
+{
+    [$scopeSql, $scopeParams] = visible_user_condition('u');
+    return rows_for_scope_users($scopeSql, $scopeParams);
+}
+
+function task_scope_users(): array
+{
+    [$scopeSql, $scopeParams] = visible_user_condition('u');
+    return rows_for_scope_users($scopeSql, $scopeParams);
+}
+
+function rows_for_scope_users(string $scopeSql, array $scopeParams): array
+{
+    $stmt = db()->prepare("SELECT id, full_name, username, role FROM users u WHERE active = 1{$scopeSql} ORDER BY full_name");
+    $stmt->execute($scopeParams);
+    return $stmt->fetchAll();
 }
 
 function user_can_access_company(int $companyId): bool

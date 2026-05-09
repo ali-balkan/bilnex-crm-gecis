@@ -50,6 +50,110 @@
         });
     });
 
+    qsa('[data-opportunity-kanban]').forEach((board) => {
+        const updateUrl = board.dataset.updateUrl || '';
+        const csrfToken = board.dataset.csrfToken || '';
+        let draggedCard = null;
+        let sourceColumn = null;
+        let clickAfterDrag = false;
+
+        const updateCounts = () => {
+            qsa('[data-kanban-stage]', board).forEach((column) => {
+                const count = qsa('[data-opportunity-card]', column).length;
+                const badge = qs('.badge', column);
+                if (badge) badge.textContent = String(count);
+            });
+        };
+
+        const setColumnActive = (column, active) => {
+            column.classList.toggle('drag-over', active);
+        };
+
+        board.addEventListener('dragstart', (event) => {
+            const card = event.target.closest('[data-opportunity-card]');
+            if (!card || !board.contains(card)) return;
+            draggedCard = card;
+            sourceColumn = card.closest('[data-kanban-stage]');
+            clickAfterDrag = true;
+            card.classList.add('dragging');
+            if (event.dataTransfer) {
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData('text/plain', card.dataset.opportunityId || '');
+            }
+        });
+
+        board.addEventListener('dragend', () => {
+            if (draggedCard) {
+                draggedCard.classList.remove('dragging');
+            }
+            qsa('[data-kanban-stage]', board).forEach((column) => setColumnActive(column, false));
+            draggedCard = null;
+            sourceColumn = null;
+            window.setTimeout(() => {
+                clickAfterDrag = false;
+            }, 0);
+        });
+
+        board.addEventListener('click', (event) => {
+            const card = event.target.closest('[data-opportunity-card]');
+            if (!card || !clickAfterDrag) return;
+            event.preventDefault();
+        });
+
+        qsa('[data-kanban-stage]', board).forEach((column) => {
+            column.addEventListener('dragover', (event) => {
+                if (!draggedCard) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'move';
+                setColumnActive(column, true);
+            });
+
+            column.addEventListener('dragleave', (event) => {
+                if (!column.contains(event.relatedTarget)) {
+                    setColumnActive(column, false);
+                }
+            });
+
+            column.addEventListener('drop', async (event) => {
+                event.preventDefault();
+                setColumnActive(column, false);
+                if (!draggedCard || !updateUrl) return;
+
+                const card = draggedCard;
+                const targetStage = column.dataset.kanbanStage || '';
+                const previousColumn = sourceColumn;
+                if (!targetStage || card.dataset.currentStage === targetStage) return;
+
+                column.appendChild(card);
+                const previousStage = card.dataset.currentStage || '';
+                card.dataset.currentStage = targetStage;
+                updateCounts();
+
+                const formData = new FormData();
+                formData.set('csrf_token', csrfToken);
+                formData.set('id', card.dataset.opportunityId || '');
+                formData.set('stage', targetStage);
+
+                try {
+                    const response = await fetch(updateUrl, {
+                        method: 'POST',
+                        body: formData,
+                        headers: { Accept: 'application/json' },
+                    });
+                    const payload = await response.json();
+                    if (!response.ok || !payload.ok) {
+                        throw new Error(payload.message || 'Fırsat aşaması güncellenemedi.');
+                    }
+                } catch (error) {
+                    if (previousColumn) previousColumn.appendChild(card);
+                    card.dataset.currentStage = previousStage;
+                    updateCounts();
+                    window.alert(error.message || 'Fırsat aşaması güncellenemedi.');
+                }
+            });
+        });
+    });
+
     const customerDialog = qs('#sql-customer-dialog');
     if (customerDialog) {
         const queryInput = qs('[data-sql-customer-query]', customerDialog);
@@ -92,7 +196,7 @@
                 setResults(payload.items.map((item) => (
                     '<button class="sql-customer-result" type="button" data-sql-customer-select data-id="' + escapeHtml(item.id) + '" data-label="' + escapeHtml(item.label) + '">' +
                     '<strong>' + escapeHtml(item.name || '-') + '</strong>' +
-                    '<span>' + escapeHtml(item.code || 'Kod yok') + ' · ' + escapeHtml(item.type || 'Cari') + ' · SQL #' + escapeHtml(item.id) + '</span>' +
+                    '<span>' + escapeHtml([item.type || 'Cari', item.meta || ''].filter(Boolean).join(' · ')) + '</span>' +
                     '</button>'
                 )).join(''));
             } catch (error) {
@@ -122,7 +226,7 @@
                 const label = picker ? qs('[data-sql-customer-label]', picker) : null;
                 if (idInput) idInput.value = '';
                 if (companyInput) companyInput.value = '';
-                if (label) label.textContent = 'Cari seçmeden de kaydedebilirsiniz';
+                if (label) label.textContent = picker.dataset.emptyLabel || 'Cari seçmeden de kaydedebilirsiniz';
             });
         });
 
@@ -200,10 +304,8 @@
 
             showResults(items.map((item) => {
                 const meta = [
-                    item.code || 'Kod yok',
                     item.type || 'Cari',
                     item.meta || '',
-                    item.sql_customer_id ? 'SQL #' + item.sql_customer_id : '',
                 ].filter(Boolean).join(' · ');
 
                 return '<button class="company-autocomplete-result" type="button" data-company-select data-company-id="' + escapeHtml(item.company_id || '') + '" data-sql-customer-id="' + escapeHtml(item.sql_customer_id || '') + '" data-label="' + escapeHtml(item.label || '') + '">' +

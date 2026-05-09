@@ -323,7 +323,7 @@ function render_login(): void
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>Giriş | <?= e(app_config('app_name')) ?></title>
         <link rel="icon" href="<?= e(rtrim(app_config('base_url'), '/')) ?>/assets/brand/bilnex-logo.svg">
-        <link rel="stylesheet" href="<?= e(rtrim(app_config('base_url'), '/')) ?>/assets/app.css">
+        <link rel="stylesheet" href="<?= e(rtrim(app_config('base_url'), '/')) ?>/assets/app.css?v=<?= e((string) @filemtime(__DIR__ . '/assets/app.css')) ?>">
     </head>
     <body class="login-page">
         <main class="login-shell">
@@ -512,7 +512,7 @@ function render_header(string $title): void
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title><?= e($title) ?> | <?= e(app_config('app_name')) ?></title>
         <link rel="icon" href="<?= e(rtrim(app_config('base_url'), '/')) ?>/assets/brand/bilnex-logo.svg">
-        <link rel="stylesheet" href="<?= e(rtrim(app_config('base_url'), '/')) ?>/assets/app.css">
+        <link rel="stylesheet" href="<?= e(rtrim(app_config('base_url'), '/')) ?>/assets/app.css?v=<?= e((string) @filemtime(__DIR__ . '/assets/app.css')) ?>">
     </head>
     <body class="page-<?= e($currentPage) ?>">
         <div class="app-shell">
@@ -582,18 +582,21 @@ function render_footer(): void
                 });
             });
         </script>
-        <script src="<?= e(rtrim(app_config('base_url'), '/')) ?>/assets/app.js" defer></script>
+        <script src="<?= e(rtrim(app_config('base_url'), '/')) ?>/assets/app.js?v=<?= e((string) @filemtime(__DIR__ . '/assets/app.js')) ?>" defer></script>
     </body>
     </html>
     <?php
 }
 
-function filter_bar(string $target, array $extra = [], bool $includeDate = true): void
+function filter_bar(string $target, array $extra = [], bool $includeDate = true, array $hidden = []): void
 {
     $dateFilter = $_GET['date_filter'] ?? '';
     ?>
     <form class="filters<?= $includeDate ? '' : ' compact-filters' ?>" method="get">
         <input type="hidden" name="page" value="<?= e($target) ?>">
+        <?php foreach ($hidden as $name => $value): ?>
+            <input type="hidden" name="<?= e($name) ?>" value="<?= e($value) ?>">
+        <?php endforeach; ?>
         <input name="q" value="<?= e($_GET['q'] ?? '') ?>" placeholder="Ara...">
         <?php foreach ($extra as $name => $options): ?>
             <select name="<?= e($name) ?>">
@@ -848,11 +851,16 @@ function find_responsible_user_id(?string $value, int $fallback): int
 
 function company_lookup_label(array $company): string
 {
-    $code = trim((string) ($company['account_code'] ?? ''));
     $name = trim((string) ($company['name'] ?? ''));
     $type = trim((string) ($company['account_type'] ?? ''));
-    $prefix = $code !== '' ? $code . ' - ' : '';
-    return (int) $company['id'] . ' | ' . $prefix . $name . ($type !== '' ? ' - ' . $type : '');
+    return $name . ($type !== '' ? ' - ' . $type : '');
+}
+
+function company_display_label(array $company): string
+{
+    $name = trim((string) ($company['name'] ?? ''));
+    $type = trim((string) ($company['account_type'] ?? ''));
+    return $name . ($type !== '' ? ' - ' . $type : '');
 }
 
 function company_id_from_lookup(string $value): int
@@ -924,10 +932,11 @@ if ($page === 'sql_customer_search') {
     $items = array_map(static function (array $row): array {
         return [
             'id' => (int) ($row['sql_customer_id'] ?? $row['id']),
-            'label' => sql_customer_lookup_label($row),
+            'label' => company_display_label($row),
             'name' => (string) ($row['name'] ?? ''),
             'code' => (string) ($row['account_code'] ?? ''),
             'type' => (string) ($row['account_type'] ?? ''),
+            'meta' => trim((string) (($row['contact_person'] ?? '') . ' ' . ($row['city'] ?? '') . ' ' . ($row['district'] ?? ''))),
         ];
     }, sql_customer_rows_for_company_list(20, null, 0, $query));
     $error = bilnex_customer_reader()->lastError();
@@ -970,7 +979,7 @@ if ($page === 'company_lookup_search') {
             return [
                 'company_id' => 0,
                 'sql_customer_id' => (int) ($row['sql_customer_id'] ?? $row['id']),
-                'label' => sql_customer_lookup_label($row),
+                'label' => company_display_label($row),
                 'name' => (string) ($row['name'] ?? ''),
                 'code' => (string) ($row['account_code'] ?? ''),
                 'type' => (string) ($row['account_type'] ?? ''),
@@ -990,7 +999,7 @@ if ($page === 'company_lookup_search') {
         return [
             'company_id' => (int) $row['id'],
             'sql_customer_id' => (int) ($row['sql_customer_id'] ?? 0),
-            'label' => company_lookup_label($row),
+            'label' => company_display_label($row),
             'name' => (string) ($row['name'] ?? ''),
             'code' => (string) ($row['account_code'] ?? ''),
             'type' => (string) ($row['account_type'] ?? ''),
@@ -1421,7 +1430,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($page === 'save_interaction') {
+        $id = (int) ($_POST['id'] ?? 0);
         $companyId = (int) ($_POST['company_id'] ?? 0);
+        $existingInteraction = null;
+        if ($id > 0) {
+            [$editInteractionScopeSql, $editInteractionScopeParams] = interaction_visibility_condition('i');
+            $existingInteraction = rows("SELECT i.* FROM interactions i WHERE i.id = :id{$editInteractionScopeSql}", $editInteractionScopeParams + [':id' => $id])[0] ?? null;
+            if (!$existingInteraction) {
+                http_response_code(404);
+                exit('Görüşme kaydı bulunamadı veya düzenleme yetkiniz yok.');
+            }
+        }
         if ($companyId <= 0) {
             $companyId = company_id_from_lookup($_POST['company_lookup'] ?? '');
         }
@@ -1444,14 +1463,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $data = [
             ':company_id' => $companyId,
             ':sql_customer_id' => company_sql_customer_id($companyId),
-            ':user_id' => current_user()['id'],
             ':interaction_date' => ($_POST['interaction_date'] ?? '') ?: date('Y-m-d'),
             ':type' => $_POST['type'] ?? 'Telefon',
             ':result' => $result,
             ':note' => trim($_POST['note'] ?? ''),
             ':next_followup_date' => $nextFollowupDate,
         ];
-        db()->prepare('INSERT INTO interactions (company_id, sql_customer_id, user_id, interaction_date, type, result, note, next_followup_date) VALUES (:company_id, :sql_customer_id, :user_id, :interaction_date, :type, :result, :note, :next_followup_date)')->execute($data);
+        if ($id > 0) {
+            $data[':id'] = $id;
+            db()->prepare('UPDATE interactions SET company_id = :company_id, sql_customer_id = :sql_customer_id, interaction_date = :interaction_date, type = :type, result = :result, note = :note, next_followup_date = :next_followup_date WHERE id = :id')->execute($data);
+        } else {
+            $data[':user_id'] = current_user()['id'];
+            db()->prepare('INSERT INTO interactions (company_id, sql_customer_id, user_id, interaction_date, type, result, note, next_followup_date) VALUES (:company_id, :sql_customer_id, :user_id, :interaction_date, :type, :result, :note, :next_followup_date)')->execute($data);
+        }
         if (company_source() !== 'sqlserver') {
             db()->prepare("UPDATE companies SET next_followup_date = COALESCE(:next_followup_date, next_followup_date), status = CASE WHEN status = 'Yeni kayıt' THEN 'Görüşüldü' ELSE status END, updated_at = CURRENT_TIMESTAMP WHERE id = :company_id")->execute([
                 ':next_followup_date' => $data[':next_followup_date'],
@@ -1477,7 +1501,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
             }
         }
-        flash('Görüşme notu eklendi.');
+        flash($id > 0 ? 'Görüşme kaydı güncellendi.' : 'Görüşme notu eklendi.');
         if (($_POST['return_to'] ?? '') === 'interactions') {
             redirect_to('interactions', ['date_filter' => 'today']);
         }
@@ -1549,6 +1573,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect_to('opportunities');
     }
 
+    if ($page === 'update_opportunity_stage') {
+        header('Content-Type: application/json; charset=utf-8');
+        $id = (int) ($_POST['id'] ?? 0);
+        $stage = (string) ($_POST['stage'] ?? '');
+        if ($id <= 0 || !in_array($stage, opportunity_stages(), true)) {
+            http_response_code(422);
+            echo json_encode(['ok' => false, 'message' => 'Geçersiz fırsat veya aşama.'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        if (!user_can_access_opportunity($id)) {
+            http_response_code(403);
+            echo json_encode(['ok' => false, 'message' => 'Bu fırsatı güncelleme yetkiniz yok.'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
+        db()->prepare('UPDATE opportunities SET stage = :stage, updated_at = CURRENT_TIMESTAMP WHERE id = :id')->execute([
+            ':stage' => $stage,
+            ':id' => $id,
+        ]);
+        echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     if ($page === 'delete_opportunity') {
         flash('Satış fırsatları silinmez. Gerekirse aşamasını güncelleyin.', 'danger');
         redirect_to('opportunities');
@@ -1581,7 +1628,7 @@ if ($page === 'dashboard') {
         $openOpportunityCount = scalar('SELECT COUNT(*) FROM opportunities o WHERE o.stage NOT IN ("Kazanıldı", "Kaybedildi")' . $dashboardOppScopeSql, $dashboardOppScopeParams);
         $cards = [
             ['Bugünkü Görüşmeler', scalar('SELECT COUNT(*) FROM interactions i WHERE date(i.interaction_date) = :today' . $dashboardInteractionScopeSql, $dashboardInteractionScopeParams + [':today' => $today]), 'Bu hafta: ' . $weekCount, 'stat-blue'],
-            ['Toplam Bayi Adayı', number_format((float) $totalCompanyCount, 0, ',', '.'), company_source() === 'sqlserver' ? 'SQL Customer kaynağı' : 'Tüm kayıtlar', 'stat-violet'],
+            ['Toplam Cari', number_format((float) $totalCompanyCount, 0, ',', '.'), company_source() === 'sqlserver' ? 'SQL Customer kaynağı' : 'Tüm kayıtlar', 'stat-violet'],
             ['Açık Görevler', $dashboardOpenTaskCount, 'Geciken: ' . $dashboardOverdueTaskCount, 'stat-red'],
             ['Açık Fırsatlar', $openOpportunityCount, 'Toplam tutar: ' . money($openAmount), 'stat-cyan'],
             ['Kazanılan Satış', $conversionWon, 'Toplam tutar: ' . money($wonAmount), 'stat-green'],
@@ -2041,7 +2088,6 @@ if ($page === 'sql_company_form') {
         <form class="panel form-grid" method="post" action="<?= e(app_url('save_sql_company')) ?>">
             <?= csrf_field() ?>
             <input type="hidden" name="sql_customer_id" value="<?= e($company['sql_customer_id']) ?>">
-            <label>SQL Customer Id <input class="readonly-input" value="<?= e($company['sql_customer_id']) ?>" readonly aria-readonly="true"></label>
             <label>Cari kodu <input class="readonly-input" value="<?= e($company['account_code'] ?: '-') ?>" readonly aria-readonly="true"></label>
             <label>Cari adı <input name="name" value="<?= e($company['name']) ?>" required></label>
             <label>Cari türü
@@ -2087,11 +2133,11 @@ if ($page === 'company_form') {
         <?= csrf_field() ?>
         <input type="hidden" name="id" value="<?= e($company['id'] ?? 0) ?>">
         <input type="hidden" name="return_to" value="<?= e($returnTo) ?>">
+        <input type="hidden" name="sql_customer_id" value="<?= e($company['sql_customer_id'] ?? '') ?>">
         <?php if ($returnTo === 'opportunity_form'): ?>
             <div class="alert wide">Cari kaydedilince Yeni Satış Fırsatı ekranına seçili olarak dönecek.</div>
         <?php endif; ?>
         <label>Cari adı <input name="name" value="<?= e($company['name'] ?? '') ?>" required></label>
-        <label>SQL Customer Id <input class="readonly-input" name="sql_customer_id" inputmode="numeric" value="<?= e($company['sql_customer_id'] ?? '') ?>" placeholder="Kaydedince otomatik atanır" readonly aria-readonly="true"></label>
         <label>Cari kodu <input class="readonly-input" name="account_code" value="<?= e($company['account_code'] ?? '') ?>" placeholder="Kaydedince otomatik atanır" readonly aria-readonly="true"></label>
         <label>Cari türü
             <select name="account_type">
@@ -2151,17 +2197,35 @@ if ($page === 'interactions') {
         $interactionCompanies = rows("SELECT c.id, c.name, c.account_code, c.account_type, c.sql_customer_id, c.contact_person, c.phone, c.city, c.district FROM companies c {$companyWhere} ORDER BY c.name LIMIT 600", $companyParams);
     }
 
-    [$interactionScopeSql, $interactionScopeParams] = interaction_visibility_condition('i');
-    $interactionScopeWhere = ' WHERE 1 = 1' . $interactionScopeSql;
-    $totalVisibleInteractions = (int) scalar("SELECT COUNT(*) FROM interactions i {$interactionScopeWhere}", $interactionScopeParams);
-    $todayInteractions = (int) scalar("SELECT COUNT(*) FROM interactions i {$interactionScopeWhere} AND date(i.interaction_date) = :today", $interactionScopeParams + [':today' => $today]);
+    $interactionScopeSql = '';
+    $interactionScopeParams = [];
+    $interactionScopeWhere = ' WHERE 1 = 1';
+    $interactionScopeUsers = active_users();
+    $allowedInteractionUserIds = array_map(static fn($user) => (int) $user['id'], $interactionScopeUsers);
+    $selectedInteractionUserId = (int) ($_GET['interaction_user_id'] ?? 0);
+    if ($selectedInteractionUserId > 0 && !in_array($selectedInteractionUserId, $allowedInteractionUserIds, true)) {
+        $selectedInteractionUserId = 0;
+    }
+    $selectedInteractionUser = null;
+    if ($selectedInteractionUserId > 0) {
+        foreach ($interactionScopeUsers as $scopeUser) {
+            if ((int) $scopeUser['id'] === $selectedInteractionUserId) {
+                $selectedInteractionUser = $scopeUser;
+                break;
+            }
+        }
+    }
+    $interactionUserWhere = $selectedInteractionUserId > 0 ? ' AND i.user_id = :selected_interaction_user_id' : '';
+    $interactionUserParams = $selectedInteractionUserId > 0 ? [':selected_interaction_user_id' => $selectedInteractionUserId] : [];
+    $totalVisibleInteractions = (int) scalar("SELECT COUNT(*) FROM interactions i {$interactionScopeWhere}{$interactionUserWhere}", $interactionScopeParams + $interactionUserParams);
+    $todayInteractions = (int) scalar("SELECT COUNT(*) FROM interactions i {$interactionScopeWhere}{$interactionUserWhere} AND date(i.interaction_date) = :today", $interactionScopeParams + $interactionUserParams + [':today' => $today]);
     [$weekFrom, $weekTo] = date_filter_range(['date_filter' => 'week']);
     [$monthFrom, $monthTo] = date_filter_range(['date_filter' => 'month']);
-    $weekInteractions = (int) scalar("SELECT COUNT(*) FROM interactions i {$interactionScopeWhere} AND date(i.interaction_date) BETWEEN :week_from AND :week_to", $interactionScopeParams + [':week_from' => $weekFrom, ':week_to' => $weekTo]);
-    $monthInteractions = (int) scalar("SELECT COUNT(*) FROM interactions i {$interactionScopeWhere} AND date(i.interaction_date) BETWEEN :month_from AND :month_to", $interactionScopeParams + [':month_from' => $monthFrom, ':month_to' => $monthTo]);
+    $weekInteractions = (int) scalar("SELECT COUNT(*) FROM interactions i {$interactionScopeWhere}{$interactionUserWhere} AND date(i.interaction_date) BETWEEN :week_from AND :week_to", $interactionScopeParams + $interactionUserParams + [':week_from' => $weekFrom, ':week_to' => $weekTo]);
+    $monthInteractions = (int) scalar("SELECT COUNT(*) FROM interactions i {$interactionScopeWhere}{$interactionUserWhere} AND date(i.interaction_date) BETWEEN :month_from AND :month_to", $interactionScopeParams + $interactionUserParams + [':month_from' => $monthFrom, ':month_to' => $monthTo]);
 
-    $listWhere = $interactionScopeWhere;
-    $listParams = $interactionScopeParams;
+    $listWhere = $interactionScopeWhere . $interactionUserWhere;
+    $listParams = $interactionScopeParams + $interactionUserParams;
     if (!empty($_GET['q'])) {
         $listWhere .= ' AND (c.name LIKE :interaction_q OR c.account_code LIKE :interaction_q OR c.contact_person LIKE :interaction_q OR c.phone LIKE :interaction_q OR i.note LIKE :interaction_q OR i.type LIKE :interaction_q OR i.result LIKE :interaction_q OR u.full_name LIKE :interaction_q)';
         $listParams[':interaction_q'] = '%' . trim((string) $_GET['q']) . '%';
@@ -2179,7 +2243,16 @@ if ($page === 'interactions') {
     $visibleInteractions = rows("SELECT i.*, c.name company_name, c.account_code company_account_code, c.account_type company_account_type, c.contact_person, c.phone, c.city, c.district, u.full_name user_name, u.role user_role FROM interactions i JOIN companies c ON c.id = i.company_id LEFT JOIN users u ON u.id = i.user_id {$listWhere} ORDER BY date(i.interaction_date) DESC, i.created_at DESC LIMIT 80", $listParams);
     $resultSummary = rows("SELECT i.result, COUNT(*) total FROM interactions i JOIN companies c ON c.id = i.company_id LEFT JOIN users u ON u.id = i.user_id {$listWhere} GROUP BY i.result ORDER BY total DESC", $listParams);
     $typeSummary = rows("SELECT i.type, COUNT(*) total FROM interactions i JOIN companies c ON c.id = i.company_id LEFT JOIN users u ON u.id = i.user_id {$listWhere} GROUP BY i.type ORDER BY total DESC", $listParams);
-    $lastInteractionDate = scalar("SELECT MAX(i.interaction_date) FROM interactions i {$interactionScopeWhere}", $interactionScopeParams);
+    $lastInteractionDate = scalar("SELECT MAX(i.interaction_date) FROM interactions i {$interactionScopeWhere}{$interactionUserWhere}", $interactionScopeParams + $interactionUserParams);
+    $editInteractionId = (int) ($_GET['edit_interaction'] ?? 0);
+    $editInteraction = null;
+    if ($editInteractionId > 0) {
+        $editInteraction = rows("SELECT i.*, c.name company_name, c.account_type company_account_type, c.sql_customer_id company_sql_customer_id, c.contact_person, c.phone, c.city, c.district FROM interactions i JOIN companies c ON c.id = i.company_id WHERE i.id = :id{$interactionScopeSql}", $interactionScopeParams + [':id' => $editInteractionId])[0] ?? null;
+        if (!$editInteraction) {
+            flash('Düzenlenecek görüşme kaydı bulunamadı.', 'danger');
+            redirect_to('interactions');
+        }
+    }
     ?>
     <section class="interaction-hero panel">
         <div>
@@ -2188,32 +2261,34 @@ if ($page === 'interactions') {
             <p>Yeni kayıtlar dashboard, raporlar ve cari kartlarına anında yansır. Görünürlük kullanıcının rol kapsamına göre otomatik uygulanır.</p>
         </div>
         <div class="interaction-hero-stats">
-            <a href="<?= e(app_url('interactions', ['date_filter' => 'today'])) ?>"><strong><?= e($todayInteractions) ?></strong><span>Bugün</span></a>
-            <a href="<?= e(app_url('interactions', ['date_filter' => 'week'])) ?>"><strong><?= e($weekInteractions) ?></strong><span>Bu hafta</span></a>
-            <a href="<?= e(app_url('interactions', ['date_filter' => 'month'])) ?>"><strong><?= e($monthInteractions) ?></strong><span>Bu ay</span></a>
+            <a href="<?= e(app_url('interactions', ['date_filter' => 'today', 'interaction_user_id' => $selectedInteractionUserId])) ?>"><strong><?= e($todayInteractions) ?></strong><span>Bugün</span></a>
+            <a href="<?= e(app_url('interactions', ['date_filter' => 'week', 'interaction_user_id' => $selectedInteractionUserId])) ?>"><strong><?= e($weekInteractions) ?></strong><span>Bu hafta</span></a>
+            <a href="<?= e(app_url('interactions', ['date_filter' => 'month', 'interaction_user_id' => $selectedInteractionUserId])) ?>"><strong><?= e($monthInteractions) ?></strong><span>Bu ay</span></a>
         </div>
     </section>
 
     <section class="interaction-layout">
         <form class="panel form-grid interaction-form" method="post" action="<?= e(app_url('save_interaction')) ?>">
             <div class="wide section-title compact-title">
-                <h2>Yeni görüşme ekle</h2>
+                <h2><?= $editInteraction ? 'Görüşmeyi düzenle' : 'Yeni görüşme ekle' ?></h2>
                 <span class="muted"><?= e($currentUser['full_name'] ?? '') ?> adına kaydedilecek</span>
             </div>
             <?= csrf_field() ?>
+            <input type="hidden" name="id" value="<?= e($editInteraction['id'] ?? 0) ?>">
             <input type="hidden" name="return_to" value="interactions">
             <?php if ($usingSqlCustomerPicker): ?>
                 <label class="wide">Görüşme yapılan cari
-                    <input type="hidden" name="company_id" value="">
-                    <input type="hidden" name="sql_customer_id" data-sql-customer-id>
-                    <div class="sql-customer-picker strong-picker" data-sql-customer-picker>
-                        <button class="lookup-button" type="button" data-open-sql-customer-picker><span data-sql-customer-label>Cari adı, kodu veya vergi no ile hızlı arayın</span></button>
+                    <input type="hidden" name="company_id" value="<?= e($editInteraction['company_id'] ?? '') ?>">
+                    <input type="hidden" name="sql_customer_id" value="<?= e($editInteraction['sql_customer_id'] ?? $editInteraction['company_sql_customer_id'] ?? '') ?>" data-sql-customer-id>
+                    <div class="sql-customer-picker strong-picker" data-sql-customer-picker data-empty-label="Listeden cari seçin">
+                        <button class="lookup-button" type="button" data-open-sql-customer-picker><span data-sql-customer-label><?= e($editInteraction ? company_display_label(['name' => $editInteraction['company_name'] ?? '', 'account_type' => $editInteraction['company_account_type'] ?? '']) : 'Listeden cari seçin') ?></span></button>
                         <button class="btn small" type="button" data-clear-sql-customer>Temizle</button>
                     </div>
                 </label>
             <?php else: ?>
                 <label class="wide" for="interaction_company_lookup">Görüşme yapılan cari
-                    <input id="interaction_company_lookup" name="company_lookup" list="interaction_company_options" required placeholder="Cari kodu, firma adı veya tür yazın..." autocomplete="off">
+                    <input type="hidden" name="company_id" value="<?= e($editInteraction['company_id'] ?? '') ?>">
+                    <input id="interaction_company_lookup" name="company_lookup" list="interaction_company_options" value="<?= e($editInteraction ? company_display_label(['name' => $editInteraction['company_name'] ?? '', 'account_type' => $editInteraction['company_account_type'] ?? '']) : '') ?>" required placeholder="Firma adı veya tür yazın..." autocomplete="off">
                     <datalist id="interaction_company_options">
                         <?php foreach ($interactionCompanies as $company): ?>
                             <option value="<?= e(company_lookup_label($company)) ?>"><?= e(trim(($company['contact_person'] ?? '') . ' ' . ($company['phone'] ?? '') . ' ' . ($company['city'] ?? ''))) ?></option>
@@ -2221,25 +2296,26 @@ if ($page === 'interactions') {
                     </datalist>
                 </label>
             <?php endif; ?>
-            <label>Görüşme tarihi <input type="date" name="interaction_date" value="<?= e($today) ?>" required></label>
+            <label>Görüşme tarihi <input type="date" name="interaction_date" value="<?= e($editInteraction['interaction_date'] ?? $today) ?>" required></label>
             <label>Görüşme türü
                 <select name="type">
                     <?php foreach (interaction_types() as $type): ?>
-                        <option value="<?= e($type) ?>"><?= e($type) ?></option>
+                        <option value="<?= e($type) ?>"<?= selected($editInteraction['type'] ?? 'Telefon', $type) ?>><?= e($type) ?></option>
                     <?php endforeach; ?>
                 </select>
             </label>
             <label>Görüşme sonucu
                 <select name="result">
                     <?php foreach (interaction_results() as $result): ?>
-                        <option value="<?= e($result) ?>"><?= e($result) ?></option>
+                        <option value="<?= e($result) ?>"<?= selected($editInteraction['result'] ?? 'Olumlu', $result) ?>><?= e($result) ?></option>
                     <?php endforeach; ?>
                 </select>
             </label>
-            <label>Sonraki takip tarihi <small class="muted">Opsiyonel</small><input type="date" name="next_followup_date"></label>
-            <label class="wide">Görüşme notu <textarea name="note" required placeholder="Görüşmenin kısa özeti, talep, itiraz veya sonraki aksiyonu yazın..."></textarea></label>
+            <label>Sonraki takip tarihi <small class="muted">Opsiyonel</small><input type="date" name="next_followup_date" value="<?= e($editInteraction['next_followup_date'] ?? '') ?>"></label>
+            <label class="wide">Görüşme notu <textarea name="note" required placeholder="Görüşmenin kısa özeti, talep, itiraz veya sonraki aksiyonu yazın..."><?= e($editInteraction['note'] ?? '') ?></textarea></label>
             <div class="actions wide">
-                <button class="btn primary" type="submit">Görüşmeyi kaydet</button>
+                <button class="btn primary" type="submit"><?= $editInteraction ? 'Görüşmeyi güncelle' : 'Görüşmeyi kaydet' ?></button>
+                <?php if ($editInteraction): ?><a class="btn" href="<?= e(app_url('interactions')) ?>">Vazgeç</a><?php endif; ?>
                 <a class="btn" href="<?= e(app_url('reports', ['date_filter' => 'today'])) ?>">Bugünün raporu</a>
             </div>
         </form>
@@ -2249,19 +2325,27 @@ if ($page === 'interactions') {
                 <h2>Hızlı okuma</h2>
                 <span class="muted"><?= e($totalVisibleInteractions) ?> görünür kayıt</span>
             </div>
-            <dl class="meta compact-meta">
-                <dt>Son görüşme</dt><dd><?= e($lastInteractionDate ?: 'Henüz yok') ?></dd>
-                <dt>Yetki kapsamı</dt><dd><?= can_view_all() ? 'Tüm ekip' : e(role_label($currentUser['role'] ?? '')) ?></dd>
-                <dt>Kayıt kaynağı</dt><dd><?= $usingSqlCustomerPicker ? 'SQL cari araması' : 'CRM cari listesi' ?></dd>
-            </dl>
+            <?php if (count($interactionScopeUsers) > 1): ?>
+                <form class="mini-filter-form" method="get">
+                    <input type="hidden" name="page" value="interactions">
+                    <input type="hidden" name="q" value="<?= e($_GET['q'] ?? '') ?>">
+                    <input type="hidden" name="type" value="<?= e($_GET['type'] ?? '') ?>">
+                    <input type="hidden" name="result" value="<?= e($_GET['result'] ?? '') ?>">
+                    <input type="hidden" name="date_filter" value="<?= e($_GET['date_filter'] ?? '') ?>">
+                    <label>Kullanıcı görüşmeleri
+                        <select name="interaction_user_id" onchange="this.form.submit()">
+                            <option value="0"<?= selected($selectedInteractionUserId, 0) ?>>Tüm kullanıcılar</option>
+                            <?php foreach ($interactionScopeUsers as $scopeUser): ?>
+                                <option value="<?= e($scopeUser['id']) ?>"<?= selected($selectedInteractionUserId, $scopeUser['id']) ?>><?= e($scopeUser['full_name']) ?> - <?= e(role_label($scopeUser['role'])) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
+                </form>
+            <?php endif; ?>
             <div class="interaction-mini-charts">
                 <div>
                     <h3>Sonuç dağılımı</h3>
                     <?php render_bar_list($resultSummary, 'result', 'total'); ?>
-                </div>
-                <div>
-                    <h3>Görüşme türleri</h3>
-                    <?php render_bar_list($typeSummary, 'type', 'total'); ?>
                 </div>
             </div>
         </aside>
@@ -2275,7 +2359,7 @@ if ($page === 'interactions') {
             </div>
             <div class="modal-body sql-customer-search">
                 <div class="sql-search-row">
-                    <input type="search" data-sql-customer-query placeholder="Cari adı, kodu veya vergi no ara..." autocomplete="off">
+                    <input type="search" data-sql-customer-query placeholder="Cari adı veya vergi no ara..." autocomplete="off">
                     <button class="btn primary" type="button" data-sql-customer-search>Ara</button>
                 </div>
                 <div class="sql-customer-results" data-sql-customer-results>Arama için en az 2 karakter yazın.</div>
@@ -2293,10 +2377,12 @@ if ($page === 'interactions') {
                 'q' => $_GET['q'] ?? '',
                 'type' => $_GET['type'] ?? '',
                 'result' => $_GET['result'] ?? '',
+                'interaction_user_id' => $selectedInteractionUserId,
             ], static fn($value) => $value !== '')); ?>
         </div>
         <form class="interaction-filters" method="get">
             <input type="hidden" name="page" value="interactions">
+            <input type="hidden" name="interaction_user_id" value="<?= e($selectedInteractionUserId) ?>">
             <input name="q" value="<?= e($_GET['q'] ?? '') ?>" placeholder="Cari, not, personel veya telefon ara...">
             <select name="type">
                 <option value="">Tüm görüşme türleri</option>
@@ -2318,31 +2404,29 @@ if ($page === 'interactions') {
             </select>
             <button class="btn primary" type="submit">Listele</button>
         </form>
-        <div class="interaction-list">
-            <?php foreach ($visibleInteractions as $item): ?>
-                <article class="interaction-card">
-                    <div class="interaction-card-main">
-                        <div>
-                            <span class="task-context"><?= e($item['interaction_date']) ?> · <?= e($item['type']) ?></span>
-                            <h3><a href="<?= e(app_url('company_view', ['id' => $item['company_id']])) ?>"><?= e($item['company_name']) ?></a></h3>
-                            <p><?= nl2br(e($item['note'])) ?></p>
-                        </div>
-                        <span class="badge soft"><?= e($item['result']) ?></span>
-                    </div>
-                    <div class="interaction-meta">
-                        <span><strong>Cari türü</strong><?= e($item['company_account_type'] ?? '-') ?></span>
-                        <span><strong>Yetkili / Telefon</strong><?= e(trim(($item['contact_person'] ?? '') . ' ' . ($item['phone'] ?? '')) ?: '-') ?></span>
-                        <span><strong>İl / İlçe</strong><?= e(trim(($item['city'] ?? '') . ' ' . ($item['district'] ?? '')) ?: '-') ?></span>
-                        <span><strong>Kaydeden</strong><?= e($item['user_name'] ?? '-') ?><?= !empty($item['user_role']) ? ' · ' . e(role_label($item['user_role'])) : '' ?></span>
-                    </div>
-                    <?php if (!empty($item['next_followup_date'])): ?>
-                        <div class="interaction-followup">Sonraki takip: <strong><?= e($item['next_followup_date']) ?></strong></div>
-                    <?php endif; ?>
-                </article>
-            <?php endforeach; ?>
-            <?php if (!$visibleInteractions): ?>
-                <p class="empty-state">Bu filtrelerle görüşme kaydı bulunamadı.</p>
-            <?php endif; ?>
+        <div class="table-wrap compact-table-wrap">
+            <table class="compact-table interaction-table">
+                <thead>
+                    <tr><th>Tarih</th><th>Cari</th><th>Tür</th><th>Sonuç</th><th>Not</th><th>Takip</th><th>Kaydeden</th><th>Aksiyon</th></tr>
+                </thead>
+                <tbody>
+                <?php foreach ($visibleInteractions as $item): ?>
+                    <tr>
+                        <td><strong><?= e($item['interaction_date']) ?></strong></td>
+                        <td><a href="<?= e(app_url('company_view', ['id' => $item['company_id']])) ?>"><?= e($item['company_name']) ?></a><small><?= e(trim(($item['contact_person'] ?? '') . ' ' . ($item['phone'] ?? '')) ?: '') ?></small></td>
+                        <td><?= e($item['type']) ?></td>
+                        <td><span class="badge soft"><?= e($item['result']) ?></span></td>
+                        <td class="truncate-cell"><?= e($item['note']) ?></td>
+                        <td><?= e($item['next_followup_date'] ?: '-') ?></td>
+                        <td><?= e($item['user_name'] ?? '-') ?></td>
+                        <td><a class="btn small" href="<?= e(app_url('interactions', ['edit_interaction' => $item['id']])) ?>">Düzenle</a></td>
+                    </tr>
+                <?php endforeach; ?>
+                <?php if (!$visibleInteractions): ?>
+                    <tr><td colspan="8" class="empty-state">Bu filtrelerle görüşme kaydı bulunamadı.</td></tr>
+                <?php endif; ?>
+                </tbody>
+            </table>
         </div>
     </section>
     <?php
@@ -2378,7 +2462,6 @@ if ($page === 'company_view') {
             <h2>Kart bilgileri</h2>
             <dl class="meta">
                 <dt>Cari türü</dt><dd><?= e($company['account_type'] ?? 'İş Ortağı') ?></dd>
-                <dt>SQL Customer Id</dt><dd><?= e($company['sql_customer_id'] ?? '-') ?></dd>
                 <dt>Cari kodu</dt><dd><?= e($company['account_code'] ?? '') ?></dd>
                 <dt>Vergi no</dt><dd><?= e($company['tax_no'] ?? '') ?></dd>
                 <dt>Vergi dairesi</dt><dd><?= e($company['tax_office'] ?? '') ?></dd>
@@ -2467,7 +2550,7 @@ if ($page === 'task_form') {
                 <select name="company_id">
                     <option value="">Bağlantı yok</option>
                     <?php foreach ($taskCompanies as $company): ?>
-                        <option value="<?= e($company['id']) ?>"><?= e(company_lookup_label($company)) ?><?= $company['sql_customer_id'] ? ' · SQL #' . e($company['sql_customer_id']) : '' ?></option>
+                        <option value="<?= e($company['id']) ?>"><?= e(company_lookup_label($company)) ?></option>
                     <?php endforeach; ?>
                 </select>
             </label>
@@ -2529,11 +2612,26 @@ if ($page === 'followups') {
 
     [$taskScopeSql, $taskScopeParams] = task_visibility_condition('t');
     $scopeWhere = ' WHERE 1 = 1' . $taskScopeSql;
-    $openTaskTotal = (int) scalar("SELECT COUNT(*) FROM tasks t {$scopeWhere} AND t.status = 'Açık'", $taskScopeParams);
-    $assignedToMeTotal = (int) scalar("SELECT COUNT(*) FROM tasks t WHERE t.assigned_to = :uid AND t.status = 'Açık'", [':uid' => $currentUserId]);
-    $assignedByMeTotal = (int) scalar("SELECT COUNT(*) FROM tasks t WHERE t.assigned_by = :uid AND t.status = 'Açık'", [':uid' => $currentUserId]);
-    $overdueTaskParams = $taskScopeParams + [':today' => $today];
-    $overdueTaskTotal = (int) scalar("SELECT COUNT(*) FROM tasks t {$scopeWhere} AND t.status = 'Açık' AND t.due_date IS NOT NULL AND date(t.due_date) < :today", $overdueTaskParams);
+    $taskScopeUsers = task_scope_users();
+    $allowedTaskUserIds = array_map(static fn($user) => (int) $user['id'], $taskScopeUsers);
+    $selectedTaskUserId = (int) ($_GET['task_user_id'] ?? $currentUserId);
+    if (!in_array($selectedTaskUserId, $allowedTaskUserIds, true)) {
+        $selectedTaskUserId = $currentUserId;
+    }
+    $selectedTaskUser = null;
+    foreach ($taskScopeUsers as $scopeUser) {
+        if ((int) $scopeUser['id'] === $selectedTaskUserId) {
+            $selectedTaskUser = $scopeUser;
+            break;
+        }
+    }
+    $taskUserWhere = ' AND (t.assigned_by = :selected_task_user_id OR t.assigned_to = :selected_task_user_id)';
+    $taskUserParams = [':selected_task_user_id' => $selectedTaskUserId];
+    $openTaskTotal = (int) scalar("SELECT COUNT(*) FROM tasks t {$scopeWhere}{$taskUserWhere} AND t.status = 'Açık'", $taskScopeParams + $taskUserParams);
+    $assignedToSelectedTotal = (int) scalar("SELECT COUNT(*) FROM tasks t {$scopeWhere} AND t.assigned_to = :selected_task_user_id AND t.assigned_by <> :selected_task_user_id AND t.status = 'Açık'", $taskScopeParams + $taskUserParams);
+    $assignedBySelectedTotal = (int) scalar("SELECT COUNT(*) FROM tasks t {$scopeWhere} AND t.assigned_by = :selected_task_user_id AND t.assigned_to <> :selected_task_user_id AND t.status = 'Açık'", $taskScopeParams + $taskUserParams);
+    $overdueTaskParams = $taskScopeParams + $taskUserParams + [':today' => $today];
+    $overdueTaskTotal = (int) scalar("SELECT COUNT(*) FROM tasks t {$scopeWhere}{$taskUserWhere} AND t.status = 'Açık' AND t.due_date IS NOT NULL AND date(t.due_date) < :today", $overdueTaskParams);
 
     ?>
     <section class="task-command panel">
@@ -2543,10 +2641,10 @@ if ($page === 'followups') {
             <p>Takip gir, işi bir personele ata ve atadığın iş üst yetkilide olsa bile sürecini buradan izle.</p>
         </div>
         <div class="task-stats">
-            <a href="<?= e(app_url('followups', ['status' => 'Açık'])) ?>"><strong><?= e($openTaskTotal) ?></strong><span>Açık iş</span></a>
-            <a href="<?= e(app_url('followups', ['status' => 'Açık'])) ?>"><strong><?= e($assignedToMeTotal) ?></strong><span>Bana atanan</span></a>
-            <a href="<?= e(app_url('followups', ['status' => 'Açık'])) ?>"><strong><?= e($assignedByMeTotal) ?></strong><span>Atadığım</span></a>
-            <a href="<?= e(app_url('followups', ['date_filter' => 'custom', 'date_to' => $today, 'status' => 'Açık'])) ?>"><strong><?= e($overdueTaskTotal) ?></strong><span>Geciken</span></a>
+            <a href="<?= e(app_url('followups', ['status' => 'Açık', 'task_user_id' => $selectedTaskUserId])) ?>"><strong><?= e($openTaskTotal) ?></strong><span>Açık iş</span></a>
+            <a href="<?= e(app_url('followups', ['status' => 'Açık', 'task_user_id' => $selectedTaskUserId])) ?>"><strong><?= e($assignedToSelectedTotal) ?></strong><span>Atanan</span></a>
+            <a href="<?= e(app_url('followups', ['status' => 'Açık', 'task_user_id' => $selectedTaskUserId])) ?>"><strong><?= e($assignedBySelectedTotal) ?></strong><span>Atadığı</span></a>
+            <a href="<?= e(app_url('followups', ['date_filter' => 'custom', 'date_to' => $today, 'status' => 'Açık', 'task_user_id' => $selectedTaskUserId])) ?>"><strong><?= e($overdueTaskTotal) ?></strong><span>Geciken</span></a>
         </div>
     </section>
 
@@ -2572,7 +2670,7 @@ if ($page === 'followups') {
                     <input type="hidden" name="company_id" value="<?= e($editTask['company_id'] ?? '') ?>">
                     <input type="hidden" name="sql_customer_id" value="<?= e($editTask['sql_customer_id'] ?? '') ?>" data-sql-customer-id>
                     <div class="sql-customer-picker" data-sql-customer-picker>
-                        <button class="lookup-button" type="button" data-open-sql-customer-picker><span data-sql-customer-label><?= e(!empty($editTask['company_name']) ? (($editTask['company_account_code'] ?? '') ? $editTask['company_account_code'] . ' - ' : '') . $editTask['company_name'] : (!empty($editTask['sql_customer_id']) ? 'SQL #' . $editTask['sql_customer_id'] : 'Cari seçmeden de kaydedebilirsiniz')) ?></span></button>
+                        <button class="lookup-button" type="button" data-open-sql-customer-picker><span data-sql-customer-label><?= e(!empty($editTask['company_name']) ? $editTask['company_name'] : 'Cari seçmeden de kaydedebilirsiniz') ?></span></button>
                         <button class="btn small" type="button" data-clear-sql-customer>Temizle</button>
                     </div>
                 </label>
@@ -2581,7 +2679,7 @@ if ($page === 'followups') {
                     <select name="company_id">
                         <option value="">Bağlantı yok</option>
                         <?php foreach ($taskCompanies as $company): ?>
-                            <option value="<?= e($company['id']) ?>"<?= selected($editTask['company_id'] ?? '', $company['id']) ?>><?= e(company_lookup_label($company)) ?><?= $company['sql_customer_id'] ? ' · SQL #' . e($company['sql_customer_id']) : '' ?></option>
+                            <option value="<?= e($company['id']) ?>"<?= selected($editTask['company_id'] ?? '', $company['id']) ?>><?= e(company_lookup_label($company)) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </label>
@@ -2614,9 +2712,26 @@ if ($page === 'followups') {
                 <span>Saha Satış</span>
             </div>
             <p class="muted">Bayi Kanal Uzmanı ve Saha Satış yalnızca kendilerine atanan veya kendilerinin atadığı işleri görür. Üst roller kendi kapsamındaki ekip işlerini de takip eder.</p>
+            <?php if (count($taskScopeUsers) > 1): ?>
+                <form class="mini-filter-form" method="get">
+                    <input type="hidden" name="page" value="followups">
+                    <input type="hidden" name="q" value="<?= e($_GET['q'] ?? '') ?>">
+                    <input type="hidden" name="status" value="<?= e($_GET['status'] ?? '') ?>">
+                    <input type="hidden" name="date_filter" value="<?= e($_GET['date_filter'] ?? '') ?>">
+                    <input type="hidden" name="date_from" value="<?= e($_GET['date_from'] ?? '') ?>">
+                    <input type="hidden" name="date_to" value="<?= e($_GET['date_to'] ?? '') ?>">
+                    <label>Kullanıcı takipleri
+                        <select name="task_user_id" onchange="this.form.submit()">
+                            <?php foreach ($taskScopeUsers as $scopeUser): ?>
+                                <option value="<?= e($scopeUser['id']) ?>"<?= selected($selectedTaskUserId, $scopeUser['id']) ?>><?= e($scopeUser['full_name']) ?> - <?= e(role_label($scopeUser['role'])) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
+                </form>
+            <?php endif; ?>
             <div class="legend-list">
-                <span><i class="legend-dot mine"></i>Bana atanan</span>
-                <span><i class="legend-dot delegated"></i>Atadığım iş</span>
+                <span><i class="legend-dot mine"></i>Başkası tarafından atanan</span>
+                <span><i class="legend-dot delegated"></i>Başkasına atadığı iş</span>
                 <span><i class="legend-dot overdue-dot"></i>Geciken</span>
             </div>
         </article>
@@ -2638,8 +2753,8 @@ if ($page === 'followups') {
     <?php endif; ?>
 
     <?php
-        $listWhere = $scopeWhere;
-        $listParams = $taskScopeParams;
+        $listWhere = $scopeWhere . $taskUserWhere;
+        $listParams = $taskScopeParams + $taskUserParams;
         if (!empty($_GET['q'])) {
             $listWhere .= ' AND (t.title LIKE :q OR t.description LIKE :q OR c.name LIKE :q OR CAST(t.sql_customer_id AS TEXT) LIKE :q OR assigner.full_name LIKE :q OR assignee.full_name LIKE :q)';
             $listParams[':q'] = '%' . $_GET['q'] . '%';
@@ -2651,22 +2766,37 @@ if ($page === 'followups') {
         apply_date_filter($listWhere, $listParams, 't.due_date', $_GET);
         filter_bar('followups', [
             'status' => ['_label' => 'Durum', 'items' => array_combine(task_statuses(), task_statuses())],
-        ]);
+        ], true, ['task_user_id' => $selectedTaskUserId]);
         $items = rows("SELECT t.*, c.name company_name, c.account_code company_account_code, assigner.full_name assigned_by_name, assignee.full_name assigned_to_name, assigner.role assigned_by_role, assignee.role assigned_to_role FROM tasks t LEFT JOIN companies c ON c.id = t.company_id LEFT JOIN users assigner ON assigner.id = t.assigned_by LEFT JOIN users assignee ON assignee.id = t.assigned_to {$listWhere} ORDER BY CASE t.status WHEN 'Açık' THEN 0 ELSE 1 END, CASE WHEN t.due_date IS NOT NULL AND date(t.due_date) < :sort_today AND t.status = 'Açık' THEN 0 ELSE 1 END, COALESCE(t.due_date, '9999-12-31'), t.created_at DESC", $listParams + [':sort_today' => $today]);
     ?>
     <section class="panel task-list-panel">
         <div class="section-title">
             <h2>İş listesi</h2>
-            <span class="muted"><?= e($openTaskTotal) ?> açık iş · görünür kapsam</span>
+            <span class="muted"><?= e($openTaskTotal) ?> açık iş · <?= e($selectedTaskUser['full_name'] ?? 'Seçili kullanıcı') ?></span>
         </div>
-        <div class="task-list">
+        <div class="table-wrap task-table-wrap">
+            <table class="task-table">
+                <thead>
+                    <tr>
+                        <th>Tip</th>
+                        <th>İş</th>
+                        <th>Cari</th>
+                        <th>Atayan</th>
+                        <th>Atanan</th>
+                        <th>Termin</th>
+                        <th>Durum</th>
+                        <th>Aksiyon</th>
+                    </tr>
+                </thead>
+                <tbody>
             <?php foreach ($items as $row): ?>
                 <?php
                     $isOpen = $row['status'] === 'Açık';
                     $isOverdue = $isOpen && $row['due_date'] && strtotime((string) $row['due_date']) < strtotime($today);
-                    $isAssignedToMe = (int) $row['assigned_to'] === $currentUserId;
-                    $isAssignedByMe = (int) $row['assigned_by'] === $currentUserId && !$isAssignedToMe;
-                    $cardClasses = ['task-card'];
+                    $isSelfAssigned = (int) $row['assigned_to'] === $selectedTaskUserId && (int) $row['assigned_by'] === $selectedTaskUserId;
+                    $isAssignedToMe = (int) $row['assigned_to'] === $selectedTaskUserId && !$isSelfAssigned;
+                    $isAssignedByMe = (int) $row['assigned_by'] === $selectedTaskUserId && !$isSelfAssigned;
+                    $cardClasses = ['task-row'];
                     if ($isAssignedToMe) {
                         $cardClasses[] = 'assigned-to-me';
                     }
@@ -2679,26 +2809,21 @@ if ($page === 'followups') {
                     if (!$isOpen) {
                         $cardClasses[] = 'completed-task';
                     }
-                    $contextLabel = $isAssignedToMe ? 'Bana atandı' : ($isAssignedByMe ? 'Atadığım iş' : 'Ekip işi');
-                    $companyDisplay = $row['company_name'] ?: (!empty($row['sql_customer_id']) ? 'SQL Customer' : '-');
+                    $contextLabel = $isSelfAssigned ? 'Açık takip' : ($isAssignedToMe ? 'Başkasından atanan iş' : ($isAssignedByMe ? 'Başkasına atadığı iş' : 'Ekip işi'));
+                    $companyDisplay = $row['company_name'] ?: '-';
                 ?>
-                <article class="<?= e(implode(' ', $cardClasses)) ?>">
-                    <div class="task-card-main">
-                        <div>
-                            <span class="task-context"><?= e($contextLabel) ?></span>
-                            <h3><?= e($row['title']) ?></h3>
-                            <?php if ($row['description']): ?><p><?= e($row['description']) ?></p><?php endif; ?>
-                        </div>
-                        <span class="badge <?= $row['status'] === 'Tamamlandı' ? 'success' : 'soft' ?>"><?= e($row['status']) ?></span>
-                    </div>
-                    <div class="task-meta">
-                        <span><strong>Atayan</strong><?= e($row['assigned_by_name'] ?? 'Silinmiş kullanıcı') ?><small><?= e(role_label($row['assigned_by_role'] ?? '')) ?></small></span>
-                        <span><strong>Atanan</strong><?= e($row['assigned_to_name'] ?? 'Silinmiş kullanıcı') ?><small><?= e(role_label($row['assigned_to_role'] ?? '')) ?></small></span>
-                        <span><strong>Termin</strong><?= e($row['due_date'] ?: '-') ?></span>
-                        <span><strong>Cari</strong><?= e($companyDisplay) ?><?php if (!empty($row['sql_customer_id'])): ?><small>SQL #<?= e($row['sql_customer_id']) ?></small><?php endif; ?></span>
-                    </div>
-                    <div class="task-card-actions">
-                        <?php if ($isOverdue): ?><span class="badge danger">Gecikmiş</span><?php endif; ?>
+                <tr class="<?= e(implode(' ', $cardClasses)) ?>">
+                    <td><span class="task-context"><?= e($contextLabel) ?></span></td>
+                    <td class="task-title-cell">
+                        <strong><?= e($row['title']) ?></strong>
+                        <?php if ($row['description']): ?><small><?= e($row['description']) ?></small><?php endif; ?>
+                    </td>
+                    <td><?= e($companyDisplay) ?></td>
+                    <td><?= e($row['assigned_by_name'] ?? 'Silinmiş kullanıcı') ?><small><?= e(role_label($row['assigned_by_role'] ?? '')) ?></small></td>
+                    <td><?= e($row['assigned_to_name'] ?? 'Silinmiş kullanıcı') ?><small><?= e(role_label($row['assigned_to_role'] ?? '')) ?></small></td>
+                    <td><?= e($row['due_date'] ?: '-') ?><?php if ($isOverdue): ?><span class="badge danger">Gecikmiş</span><?php endif; ?></td>
+                    <td><span class="badge <?= $row['status'] === 'Tamamlandı' ? 'success' : 'soft' ?>"><?= e($row['status']) ?></span></td>
+                    <td class="task-actions-cell">
                         <a class="btn small" href="<?= e(app_url('followups', ['edit_task' => $row['id']])) ?>">Düzenle</a>
                         <?php if ($row['status'] !== 'Tamamlandı' && can_complete_task($row)): ?>
                             <form method="post" action="<?= e(app_url('complete_task')) ?>" class="inline-form task-complete-form">
@@ -2713,9 +2838,11 @@ if ($page === 'followups') {
                         <?php else: ?>
                             <span class="muted">Tamamlama yetkisi atanan kişide.</span>
                         <?php endif; ?>
-                    </div>
-                </article>
+                    </td>
+                </tr>
             <?php endforeach; ?>
+                </tbody>
+            </table>
             <?php if (!$items): ?>
                 <p class="empty-state">Bu filtrelerle görünen iş kaydı yok.</p>
             <?php endif; ?>
@@ -2782,7 +2909,7 @@ if ($page === 'followups_calendar_legacy') {
                     <?php foreach ($tasksByDate[$dateKey] ?? [] as $task): ?>
                         <div class="calendar-task">
                             <span><?= e($task['title']) ?></span>
-                            <?php if (!empty($task['company_name'])): ?><small><?= e($task['company_name']) ?><?= $task['sql_customer_id'] ? ' · SQL #' . e($task['sql_customer_id']) : '' ?></small><?php endif; ?>
+                            <?php if (!empty($task['company_name'])): ?><small><?= e($task['company_name']) ?></small><?php endif; ?>
                             <small>Atayan: <?= e($task['assigned_by_name']) ?> · Atanan: <?= e($task['assigned_to_name']) ?></small>
                             <?php if ((int) $task['assigned_to'] === (int) current_user()['id']): ?>
                                 <form method="post" action="<?= e(app_url('complete_task')) ?>" class="calendar-complete">
@@ -2819,7 +2946,7 @@ if ($page === 'followups_calendar_legacy') {
                 <select name="company_id">
                     <option value="">Bağlantı yok</option>
                     <?php foreach ($taskCompanies as $company): ?>
-                        <option value="<?= e($company['id']) ?>"><?= e(company_lookup_label($company)) ?><?= $company['sql_customer_id'] ? ' · SQL #' . e($company['sql_customer_id']) : '' ?></option>
+                        <option value="<?= e($company['id']) ?>"><?= e(company_lookup_label($company)) ?></option>
                     <?php endforeach; ?>
                 </select>
             </label>
@@ -2849,13 +2976,12 @@ if ($page === 'followups_calendar_legacy') {
         <section class="panel">
             <div class="section-title"><h2>İş listesi</h2><span class="muted">Tüm atayan / atanan işler</span></div>
             <div class="table-wrap"><table>
-                <thead><tr><th>İş</th><th>İlgili cari</th><th>SQL Customer</th><th>Atayan</th><th>Atanan</th><th>Termin</th><th>Durum</th><th>Aksiyon</th></tr></thead>
+                <thead><tr><th>İş</th><th>İlgili cari</th><th>Atayan</th><th>Atanan</th><th>Termin</th><th>Durum</th><th>Aksiyon</th></tr></thead>
                 <tbody>
                 <?php foreach ($items as $row): ?>
                     <tr class="<?= $row['status'] === 'Açık' && $row['due_date'] && strtotime($row['due_date']) < strtotime(date('Y-m-d')) ? 'overdue' : '' ?>">
                         <td><strong><?= e($row['title']) ?></strong><?php if ($row['description']): ?><small><?= e($row['description']) ?></small><?php endif; ?></td>
                         <td><?= e($row['company_name'] ?? '-') ?></td>
-                        <td><?= e($row['sql_customer_id'] ?? '-') ?></td>
                         <td><?= e($row['assigned_by_name'] ?? 'Silinmiş kullanıcı') ?></td>
                         <td><?= e($row['assigned_to_name'] ?? 'Silinmiş kullanıcı') ?></td>
                         <td><?= e($row['due_date']) ?></td>
@@ -3032,48 +3158,66 @@ if ($page === 'opportunities') {
         $where .= ' AND c.account_type = :account_type';
         $params[':account_type'] = normalize_company_account_type($_GET['account_type']);
     }
+    $viewMode = (string) ($_GET['view'] ?? 'kanban');
+    if (!in_array($viewMode, ['kanban', 'list'], true)) {
+        $viewMode = 'kanban';
+    }
     apply_date_filter($where, $params, 'o.expected_close_date', $_GET);
     filter_bar('opportunities', [
         'account_type' => ['_label' => 'Cari türü', 'items' => array_combine(company_account_types(), company_account_types())],
         'stage_group' => ['_label' => 'Fırsat durumu', 'items' => ['open' => 'Açık fırsatlar']],
         'stage' => ['_label' => 'Aşama', 'items' => array_combine(opportunity_stages(), opportunity_stages())],
-    ]);
+    ], true, ['view' => $viewMode]);
     $items = rows("SELECT o.*, c.name company_name, c.account_type company_account_type, c.sql_customer_id company_sql_customer_id, u.full_name salesperson_name FROM opportunities o JOIN companies c ON c.id = o.company_id LEFT JOIN users u ON u.id = o.salesperson_id {$where} ORDER BY o.updated_at DESC", $params);
     $itemsByStage = [];
     foreach ($items as $item) {
         $itemsByStage[$item['stage']][] = $item;
     }
+    $viewParams = $_GET;
+    unset($viewParams['page']);
+    $kanbanViewParams = $viewParams + ['view' => 'kanban'];
+    $listViewParams = $viewParams + ['view' => 'list'];
+    $kanbanViewParams['view'] = 'kanban';
+    $listViewParams['view'] = 'list';
     ?>
     <div class="toolbar">
         <a class="btn primary" href="<?= e(app_url('opportunity_form')) ?>">Yeni satış fırsatı</a>
-        <button class="btn" type="button" data-export-table="#opportunities-table" data-filename="satis-firsatlari.csv">CSV indir</button>
-    </div>
-    <section class="panel">
-        <div class="section-title"><h2>Kanban görünümü</h2><span class="muted">Aşamaya göre açık ve kapanan fırsatlar</span></div>
-        <div class="kanban-board">
-            <?php foreach (opportunity_stages() as $stage): ?>
-                <section class="kanban-column">
-                    <h3><?= e($stage) ?> <span class="badge soft"><?= e(count($itemsByStage[$stage] ?? [])) ?></span></h3>
-                    <?php foreach (array_slice($itemsByStage[$stage] ?? [], 0, 6) as $card): ?>
-                        <a class="kanban-card" href="<?= e(app_url('opportunity_form', ['id' => $card['id']])) ?>">
-                            <strong><?= e($card['company_name']) ?></strong>
-                            <span><?= e($card['product_service']) ?></span>
-                            <small><?= e(money($card['estimated_amount'])) ?> · <?= e($card['expected_close_date'] ?: '-') ?></small>
-                        </a>
-                    <?php endforeach; ?>
-                </section>
-            <?php endforeach; ?>
+        <div class="view-switch" aria-label="Görünüm seçimi">
+            <a class="<?= e($viewMode === 'kanban' ? 'active' : '') ?>" href="<?= e(app_url('opportunities', $kanbanViewParams)) ?>">Kanban</a>
+            <a class="<?= e($viewMode === 'list' ? 'active' : '') ?>" href="<?= e(app_url('opportunities', $listViewParams)) ?>">Liste</a>
         </div>
-    </section>
+        <?php if ($viewMode === 'list'): ?>
+            <button class="btn" type="button" data-export-table="#opportunities-table" data-filename="satis-firsatlari.csv">CSV indir</button>
+        <?php endif; ?>
+    </div>
+    <?php if ($viewMode === 'kanban'): ?>
+        <section class="panel">
+            <div class="section-title"><h2>Kanban görünümü</h2><span class="muted">Aşamaya göre açık ve kapanan fırsatlar</span></div>
+            <div class="kanban-board" data-opportunity-kanban data-update-url="<?= e(app_url('update_opportunity_stage')) ?>" data-csrf-token="<?= e(csrf_token()) ?>">
+                <?php foreach (opportunity_stages() as $stage): ?>
+                    <section class="kanban-column" data-kanban-stage="<?= e($stage) ?>">
+                        <h3><?= e($stage) ?> <span class="badge soft"><?= e(count($itemsByStage[$stage] ?? [])) ?></span></h3>
+                        <?php foreach (array_slice($itemsByStage[$stage] ?? [], 0, 6) as $card): ?>
+                            <a class="kanban-card" href="<?= e(app_url('opportunity_form', ['id' => $card['id']])) ?>" draggable="true" data-opportunity-card data-opportunity-id="<?= e($card['id']) ?>" data-current-stage="<?= e($stage) ?>">
+                                <strong><?= e($card['company_name']) ?></strong>
+                                <span><?= e($card['product_service']) ?></span>
+                                <small><?= e(money($card['estimated_amount'])) ?> · <?= e($card['expected_close_date'] ?: '-') ?></small>
+                            </a>
+                        <?php endforeach; ?>
+                    </section>
+                <?php endforeach; ?>
+            </div>
+        </section>
+    <?php else: ?>
     <section class="panel">
+        <div class="section-title"><h2>Liste görünümü</h2><span class="muted"><?= e(count($items)) ?> fırsat</span></div>
         <div class="table-wrap"><table class="opportunities-table" id="opportunities-table">
-            <thead><tr><th>Cari</th><th>Cari türü</th><th>SQL Customer</th><th>Satışçı</th><th>Ürün / hizmet</th><th>Tutar</th><th>Aşama</th><th>Kapanış</th><th>Aksiyon</th></tr></thead>
+            <thead><tr><th>Cari</th><th>Cari türü</th><th>Satışçı</th><th>Ürün / hizmet</th><th>Tutar</th><th>Aşama</th><th>Kapanış</th><th>Aksiyon</th></tr></thead>
             <tbody>
             <?php foreach ($items as $row): ?>
                 <tr>
                     <td><a href="<?= e(app_url('company_view', ['id' => $row['company_id']])) ?>"><?= e($row['company_name']) ?></a></td>
                     <td><span class="badge soft"><?= e($row['company_account_type'] ?? 'İş Ortağı') ?></span></td>
-                    <td><?= e($row['sql_customer_id'] ?? $row['company_sql_customer_id'] ?? '-') ?></td>
                     <td><?= e($row['salesperson_name']) ?></td>
                     <td><?= e($row['product_service']) ?></td>
                     <td><?= e(money($row['estimated_amount'])) ?></td>
@@ -3087,6 +3231,7 @@ if ($page === 'opportunities') {
             </tbody>
         </table></div>
     </section>
+    <?php endif; ?>
     <?php
     render_footer();
     exit;
@@ -3123,7 +3268,7 @@ if ($page === 'opportunity_form') {
                 <div class="company-autocomplete-box">
                     <input type="hidden" name="company_id" value="<?= e($selectedCompany['id'] ?? '') ?>" data-company-id>
                     <input type="hidden" name="sql_customer_id" value="<?= e($selectedCompany['sql_customer_id'] ?? '') ?>" data-company-sql-id>
-                    <input id="company_lookup" name="company_lookup" value="<?= e($selectedCompany ? company_lookup_label($selectedCompany) : '') ?>" placeholder="En az 3 harf yazın; cari kodu, firma adı, telefon veya il ara..." required autocomplete="off" data-company-search-input>
+                    <input id="company_lookup" name="company_lookup" value="<?= e($selectedCompany ? company_display_label($selectedCompany) : '') ?>" placeholder="En az 3 harf yazın; firma adı, telefon veya il ara..." required autocomplete="off" data-company-search-input>
                     <div class="company-autocomplete-results" data-company-search-results hidden></div>
                 </div>
                 <a class="btn" href="<?= e(app_url('company_form', ['return_to' => 'opportunity_form'])) ?>">Yeni cari ekle</a>
