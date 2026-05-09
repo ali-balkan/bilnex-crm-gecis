@@ -3048,11 +3048,21 @@ dialog.modal::backdrop {
     display: grid;
     grid-template-columns: repeat(4, minmax(220px, 1fr));
     gap: 18px;
+    align-items: stretch;
 }
 
 .dashboard-list-card {
+    display: flex;
+    flex-direction: column;
     min-height: 246px;
-    align-self: start;
+    height: 100%;
+    align-self: stretch;
+}
+
+.dashboard-list-card .mini-card-list,
+.dashboard-list-card .reminder-list {
+    flex: 1;
+    align-content: start;
 }
 
 .page-dashboard .mini-card {
