@@ -403,6 +403,10 @@ function init_db(): void
             FOREIGN KEY (assigned_by) REFERENCES users(id) ON DELETE SET NULL,
             FOREIGN KEY (assigned_to) REFERENCES users(id) ON DELETE SET NULL
         );
+
+        CREATE INDEX IF NOT EXISTS idx_interactions_user_date ON interactions(user_id, interaction_date);
+        CREATE INDEX IF NOT EXISTS idx_interactions_company_date ON interactions(company_id, interaction_date);
+        CREATE INDEX IF NOT EXISTS idx_interactions_result_date ON interactions(result, interaction_date);
     ");
 
     $userColumns = $pdo->query('PRAGMA table_info(users)')->fetchAll();

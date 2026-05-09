@@ -136,7 +136,7 @@ $sessions = @{
     sales = Login "test_satis" "Test123!satis"
 }
 
-$pages = @("dashboard", "companies", "followups", "opportunities", "reports", "company_form", "opportunity_form")
+$pages = @("dashboard", "companies", "interactions", "followups", "opportunities", "reports", "company_form", "opportunity_form")
 foreach ($role in $sessions.Keys) {
     foreach ($page in $pages) {
         $status = Get-Status "$base/index.php?page=$page" $sessions[$role]
@@ -148,7 +148,7 @@ foreach ($role in @("manager", "channel", "sales")) {
     Assert-True ((Get-Status "$base/index.php?page=users" $sessions[$role]).Status -eq 403) "$role users forbidden"
 }
 
-$navPages = @("dashboard", "users", "companies", "followups", "opportunities", "reports", "company_form")
+$navPages = @("dashboard", "users", "companies", "interactions", "followups", "opportunities", "reports", "company_form")
 foreach ($page in $navPages) {
     $status = Get-Status "$base/index.php?page=$page" $sessions.admin
     Assert-True (($status.Status -eq 200 -or $status.Status -eq 302)) "admin nav/button $page"
@@ -238,6 +238,21 @@ $afterInteraction = Post-And-Follow "$base/index.php?page=save_interaction" @{
     note = $interactionNote
 } $sessions.sales
 Assert-True ($afterInteraction.Content -like "*$interactionNote*") "gÃ¶rÃ¼ÅŸme notu eklenir"
+
+$interactionListPage = Invoke-WebRequest -Uri "$base/index.php?page=interactions" -WebSession $sessions.sales -UseBasicParsing
+Assert-True ($interactionListPage.Content -like "*interaction-form*" -and $interactionListPage.Content -like "*$interactionNote*") "gÃ¶rÃ¼ÅŸme sayfasÄ± eski kaydÄ± listeler"
+$interactionPageToken = Extract-Token $interactionListPage.Content
+$quickInteractionNote = "Regression hizli gorusme $stamp"
+$quickInteractionPage = Post-And-Follow "$base/index.php?page=save_interaction" @{
+    csrf_token = $interactionPageToken
+    return_to = "interactions"
+    company_lookup = "$companyId | $updatedCompanyName - Ä°ÅŸ OrtaÄŸÄ±"
+    interaction_date = (Get-Date).ToString("yyyy-MM-dd")
+    type = "Telefon"
+    result = "Tekrar aranacak"
+    note = $quickInteractionNote
+} $sessions.sales
+Assert-True ($quickInteractionPage.Content -like "*$quickInteractionNote*" -and $quickInteractionPage.Content -like "*period-tabs*") "ana menÃ¼ gÃ¶rÃ¼ÅŸme sayfasÄ±ndan kayÄ±t eklenir"
 
 $oppForm = Invoke-WebRequest -Uri "$base/index.php?page=opportunity_form&company_id=$companyId" -WebSession $sessions.sales -UseBasicParsing
 $oppToken = Extract-Token $oppForm.Content
