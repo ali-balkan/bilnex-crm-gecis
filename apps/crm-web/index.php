@@ -1984,16 +1984,6 @@ if ($page === 'companies') {
     foreach ($users as $u) {
         $userOptions[$u['id']] = $u['full_name'];
     }
-    $extras = [
-        'account_type' => ['_label' => 'Cari türü', 'items' => array_combine(company_account_types(), company_account_types())],
-    ];
-    if (!$usingSqlServerCompanies) {
-        $extras['status'] = ['_label' => 'Durum', 'items' => array_combine(company_statuses(), company_statuses())];
-    }
-    if (!$usingSqlServerCompanies && can_view_all()) {
-        $extras['responsible_user_id'] = ['_label' => 'Sorumlu', 'items' => $userOptions];
-    }
-    filter_bar('companies', $extras, !$usingSqlServerCompanies);
     $pageNumber = max(1, (int) ($_GET['p'] ?? 1));
     $perPage = (int) ($_GET['per_page'] ?? 100);
     if (!in_array($perPage, [50, 100, 250, 500], true)) {
@@ -2018,17 +2008,69 @@ if ($page === 'companies') {
             $companyTotal = $activeCustomerTotal;
         }
     }
+    $companyDateFilter = (string) ($_GET['date_filter'] ?? '');
+    $hasCompanyFilters = trim((string) ($_GET['q'] ?? '')) !== ''
+        || trim((string) ($_GET['account_type'] ?? '')) !== ''
+        || (!$usingSqlServerCompanies && (
+            trim((string) ($_GET['status'] ?? '')) !== ''
+            || trim((string) ($_GET['responsible_user_id'] ?? '')) !== ''
+            || trim($companyDateFilter) !== ''
+            || trim((string) ($_GET['date_from'] ?? '')) !== ''
+            || trim((string) ($_GET['date_to'] ?? '')) !== ''
+        ));
     ?>
-    <?php if ($usingSqlServerCompanies): ?>
-        <div class="alert">Cari listesi SQL Server dbo.Customer kaynağından okunuyor. Yeni cari kayıtları SQL Server'a yazılır.</div>
-        <?php if ($sqlCustomerReadError): ?>
-            <div class="alert alert-danger">
-                SQL Server Customer kaynagi okunamadi. Coolify ortam degiskenlerinde BILNEX_SQL_SERVER, BILNEX_SQL_DATABASE, kullanici ve sifreyi kontrol edin.
-                <?php if (can_manage_users()): ?>
-                    <br><small><?= e($sqlCustomerReadError) ?></small>
-                <?php endif; ?>
-            </div>
+    <form class="company-search-panel<?= $usingSqlServerCompanies ? '' : ' company-search-panel-local' ?><?= $hasCompanyFilters ? ' has-clear' : '' ?>" method="get" role="search">
+        <input type="hidden" name="page" value="companies">
+        <input type="hidden" name="per_page" value="<?= e($perPage) ?>">
+        <div class="company-search-field">
+            <span class="company-search-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false"><path d="M10.5 4a6.5 6.5 0 0 1 5.2 10.4l4 4-1.4 1.4-4-4A6.5 6.5 0 1 1 10.5 4Zm0 2a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9Z"/></svg>
+            </span>
+            <input name="q" value="<?= e($_GET['q'] ?? '') ?>" placeholder="Cari adı, yetkili, telefon veya vergi no ara" autocomplete="off" aria-label="Cari ara">
+        </div>
+        <select name="account_type" aria-label="Cari türü">
+            <option value="">Tüm cari türleri</option>
+            <?php foreach (company_account_types() as $type): ?>
+                <option value="<?= e($type) ?>"<?= selected($_GET['account_type'] ?? '', $type) ?>><?= e($type) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <?php if (!$usingSqlServerCompanies): ?>
+            <select name="status" aria-label="Durum">
+                <option value="">Tüm durumlar</option>
+                <?php foreach (company_statuses() as $status): ?>
+                    <option value="<?= e($status) ?>"<?= selected($_GET['status'] ?? '', $status) ?>><?= e($status) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <?php if (can_view_all()): ?>
+                <select name="responsible_user_id" aria-label="Sorumlu">
+                    <option value="">Tüm sorumlular</option>
+                    <?php foreach ($userOptions as $id => $name): ?>
+                        <option value="<?= e($id) ?>"<?= selected($_GET['responsible_user_id'] ?? '', (string) $id) ?>><?= e($name) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            <?php endif; ?>
+            <select name="date_filter" aria-label="Tarih">
+                <option value="">Tüm tarihler</option>
+                <option value="today"<?= selected($companyDateFilter, 'today') ?>>Bugün</option>
+                <option value="week"<?= selected($companyDateFilter, 'week') ?>>Bu hafta</option>
+                <option value="month"<?= selected($companyDateFilter, 'month') ?>>Bu ay</option>
+                <option value="custom"<?= selected($companyDateFilter, 'custom') ?>>Özel aralık</option>
+            </select>
+            <input type="date" name="date_from" value="<?= e($_GET['date_from'] ?? '') ?>" aria-label="Başlangıç tarihi">
+            <input type="date" name="date_to" value="<?= e($_GET['date_to'] ?? '') ?>" aria-label="Bitiş tarihi">
         <?php endif; ?>
+        <button class="btn primary" type="submit">Ara</button>
+        <?php if ($hasCompanyFilters): ?>
+            <a class="btn" href="<?= e(app_url('companies', ['per_page' => $perPage])) ?>">Temizle</a>
+        <?php endif; ?>
+    </form>
+    <?php if ($usingSqlServerCompanies && $sqlCustomerReadError): ?>
+        <div class="alert alert-danger">
+            SQL Server Customer kaynagi okunamadi. Coolify ortam degiskenlerinde BILNEX_SQL_SERVER, BILNEX_SQL_DATABASE, kullanici ve sifreyi kontrol edin.
+            <?php if (can_manage_users()): ?>
+                <br><small><?= e($sqlCustomerReadError) ?></small>
+            <?php endif; ?>
+        </div>
     <?php endif; ?>
     <section class="panel company-list-panel">
         <div class="section-title">

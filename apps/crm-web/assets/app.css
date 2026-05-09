@@ -1311,6 +1311,69 @@ input[list] {
     grid-template-columns: minmax(280px, 1.4fr) minmax(180px, .75fr) auto;
 }
 
+.company-search-panel {
+    display: grid;
+    grid-template-columns: minmax(320px, 1fr) minmax(210px, 320px) auto;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 16px;
+    padding: 12px;
+    border: 1px solid #cfe0ee;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #ffffff 0%, #f5fbff 100%);
+    box-shadow: 0 16px 36px rgba(6, 33, 72, .08);
+}
+
+.company-search-panel.has-clear {
+    grid-template-columns: minmax(320px, 1fr) minmax(210px, 320px) auto auto;
+}
+
+.company-search-panel-local,
+.company-search-panel-local.has-clear {
+    grid-template-columns: minmax(260px, 1.4fr) repeat(auto-fit, minmax(150px, .75fr));
+}
+
+.company-search-field {
+    position: relative;
+}
+
+.company-search-icon {
+    position: absolute;
+    left: 15px;
+    top: 50%;
+    display: inline-flex;
+    width: 20px;
+    height: 20px;
+    color: var(--primary);
+    transform: translateY(-50%);
+    pointer-events: none;
+}
+
+.company-search-icon svg {
+    width: 20px;
+    height: 20px;
+    fill: currentColor;
+}
+
+.company-search-panel input,
+.company-search-panel select {
+    min-height: 48px;
+    border-color: #c8d9e8;
+    border-radius: 10px;
+    background-color: #fff;
+}
+
+.company-search-field input {
+    padding-left: 46px;
+    font-weight: 600;
+}
+
+.company-search-panel .btn {
+    min-height: 48px;
+    padding-inline: 22px;
+    border-radius: 10px;
+}
+
 .import-panel {
     display: grid;
     grid-template-columns: minmax(260px, 1fr) minmax(180px, 240px) minmax(220px, 320px) auto;
@@ -3138,7 +3201,7 @@ dialog.modal::backdrop {
     .topbar, .detail-head, .actions, .section-title, .report-hero, .field-hero, .profile-session, .interaction-card-main { align-items: stretch; flex-direction: column; }
     .report-actions, .quick-actions, .period-tabs { justify-content: stretch; }
     .report-actions .btn, .quick-actions .btn, .period-tabs a { width: 100%; }
-    .stats-grid, .grid-two, .form-grid, .filters, .import-panel, .dashboard-grid, .pipeline, .field-focus-grid, .analytics-split, .task-command, .task-stats, .task-meta, .sql-customer-picker, .sql-search-row, .field-action-row, .dashboard-list-grid, .interaction-hero, .interaction-hero-stats, .interaction-layout, .interaction-filters, .interaction-meta, .page-dashboard .stats-grid { grid-template-columns: 1fr; }
+    .stats-grid, .grid-two, .form-grid, .filters, .company-search-panel, .company-search-panel.has-clear, .company-search-panel-local, .company-search-panel-local.has-clear, .import-panel, .dashboard-grid, .pipeline, .field-focus-grid, .analytics-split, .task-command, .task-stats, .task-meta, .sql-customer-picker, .sql-search-row, .field-action-row, .dashboard-list-grid, .interaction-hero, .interaction-hero-stats, .interaction-layout, .interaction-filters, .interaction-meta, .page-dashboard .stats-grid { grid-template-columns: 1fr; }
     .wide-panel { grid-column: auto; }
     .meta { grid-template-columns: 1fr; }
     h1 { font-size: 23px; }
@@ -3221,6 +3284,7 @@ dialog.modal::backdrop {
     .actions .btn,
     .section-title .btn,
     .import-panel .btn,
+    .company-search-panel .btn,
     .filters .btn,
     .filters button {
         width: 100%;
