@@ -209,6 +209,13 @@ $companyPage = Post-And-Follow "$base/index.php?page=save_company" @{
 $companyId = [regex]::Match($companyPage.BaseResponse.ResponseUri.AbsoluteUri, 'id=(\d+)').Groups[1].Value
 Assert-True ($companyId -and $companyPage.Content -like "*$companyName*") "satÄ±ÅŸÃ§Ä± firma oluÅŸturur"
 
+$shortLookup = (Invoke-WebRequest -Uri "$base/index.php?page=company_lookup_search&q=Re" -WebSession $sessions.sales -UseBasicParsing).Content | ConvertFrom-Json
+Assert-True (@($shortLookup.items).Count -eq 0) "fÄ±rsat cari aramasÄ± 3 karakterden Ã¶nce liste dÃ¶ndÃ¼rmez"
+$lookupQuery = [System.Net.WebUtility]::UrlEncode("Regression")
+$companyLookup = (Invoke-WebRequest -Uri "$base/index.php?page=company_lookup_search&q=$lookupQuery" -WebSession $sessions.sales -UseBasicParsing).Content | ConvertFrom-Json
+$lookupCompanyIds = @($companyLookup.items | ForEach-Object { [string]$_.company_id })
+Assert-True ($lookupCompanyIds -contains [string]$companyId) "fÄ±rsat cari aramasÄ± yazÄ±lan cariyi listeler"
+
 $editToken = Extract-Token (Invoke-WebRequest -Uri "$base/index.php?page=company_form&id=$companyId" -WebSession $sessions.sales -UseBasicParsing).Content
 $updatedCompanyName = "$companyName GÃ¼ncel"
 $updatedCompany = Post-And-Follow "$base/index.php?page=save_company" @{

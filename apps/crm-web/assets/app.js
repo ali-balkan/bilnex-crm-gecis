@@ -156,6 +156,150 @@
         });
     }
 
+    qsa('[data-company-autocomplete]').forEach((root) => {
+        const input = qs('[data-company-search-input]', root);
+        const companyIdInput = qs('[data-company-id]', root);
+        const sqlCustomerIdInput = qs('[data-company-sql-id]', root);
+        const results = qs('[data-company-search-results]', root);
+        const form = root.closest('form');
+        let searchTimer = null;
+        let requestController = null;
+        let selectedLabel = input ? input.value.trim() : '';
+
+        if (!input || !results || !root.dataset.searchUrl) return;
+
+        const escapeHtml = (value) => String(value || '').replace(/[&<>"']/g, (char) => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;',
+        }[char]));
+
+        const showResults = (html) => {
+            results.innerHTML = html;
+            results.hidden = false;
+        };
+
+        const hideResults = () => {
+            results.hidden = true;
+            results.innerHTML = '';
+        };
+
+        const clearSelectionIfChanged = () => {
+            if (input.value.trim() === selectedLabel) return;
+            if (companyIdInput) companyIdInput.value = '';
+            if (sqlCustomerIdInput) sqlCustomerIdInput.value = '';
+        };
+
+        const renderItems = (items) => {
+            if (!items || items.length === 0) {
+                showResults('<div class="company-autocomplete-hint">Bu aramayla cari bulunamadı. Sağdaki Yeni cari ekle ile kayıt açabilirsiniz.</div>');
+                return;
+            }
+
+            showResults(items.map((item) => {
+                const meta = [
+                    item.code || 'Kod yok',
+                    item.type || 'Cari',
+                    item.meta || '',
+                    item.sql_customer_id ? 'SQL #' + item.sql_customer_id : '',
+                ].filter(Boolean).join(' · ');
+
+                return '<button class="company-autocomplete-result" type="button" data-company-select data-company-id="' + escapeHtml(item.company_id || '') + '" data-sql-customer-id="' + escapeHtml(item.sql_customer_id || '') + '" data-label="' + escapeHtml(item.label || '') + '">' +
+                    '<strong>' + escapeHtml(item.name || item.label || '-') + '</strong>' +
+                    '<span>' + escapeHtml(meta) + '</span>' +
+                    '</button>';
+            }).join(''));
+        };
+
+        const searchCompanies = async () => {
+            const query = input.value.trim();
+            if (query.length < 3) {
+                hideResults();
+                return;
+            }
+
+            if (requestController) requestController.abort();
+            requestController = new AbortController();
+            showResults('<div class="company-autocomplete-hint">Cariler aranıyor...</div>');
+
+            const url = new URL(root.dataset.searchUrl, window.location.href);
+            url.searchParams.set('q', query);
+
+            try {
+                const response = await fetch(url.toString(), {
+                    headers: { Accept: 'application/json' },
+                    signal: requestController.signal,
+                });
+                const payload = await response.json();
+                if (payload.error) {
+                    showResults('<div class="company-autocomplete-hint danger">Cari araması yapılamadı: ' + escapeHtml(payload.error) + '</div>');
+                    return;
+                }
+                renderItems(payload.items || []);
+            } catch (error) {
+                if (error.name === 'AbortError') return;
+                showResults('<div class="company-autocomplete-hint danger">Cari araması yapılamadı.</div>');
+            }
+        };
+
+        input.addEventListener('input', () => {
+            clearSelectionIfChanged();
+            window.clearTimeout(searchTimer);
+            const query = input.value.trim();
+            if (query.length < 3) {
+                if (query.length > 0) {
+                    showResults('<div class="company-autocomplete-hint">Arama için en az 3 karakter yazın.</div>');
+                } else {
+                    hideResults();
+                }
+                return;
+            }
+            searchTimer = window.setTimeout(searchCompanies, 300);
+        });
+
+        input.addEventListener('focus', () => {
+            if (input.value.trim().length >= 3 && !(companyIdInput && companyIdInput.value) && !(sqlCustomerIdInput && sqlCustomerIdInput.value)) {
+                searchCompanies();
+            }
+        });
+
+        input.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter' || results.hidden) return;
+            const firstItem = qs('[data-company-select]', results);
+            if (!firstItem) return;
+            event.preventDefault();
+            firstItem.click();
+        });
+
+        results.addEventListener('click', (event) => {
+            const button = event.target.closest('[data-company-select]');
+            if (!button) return;
+            input.value = button.dataset.label || '';
+            selectedLabel = input.value.trim();
+            if (companyIdInput) companyIdInput.value = button.dataset.companyId || '';
+            if (sqlCustomerIdInput) sqlCustomerIdInput.value = button.dataset.sqlCustomerId || '';
+            hideResults();
+            input.focus();
+        });
+
+        if (form) {
+            form.addEventListener('submit', (event) => {
+                if ((companyIdInput && companyIdInput.value) || (sqlCustomerIdInput && sqlCustomerIdInput.value) || input.value.trim() === '') {
+                    return;
+                }
+                event.preventDefault();
+                showResults('<div class="company-autocomplete-hint danger">Devam etmek için listeden bir cari seçin.</div>');
+                input.focus();
+            });
+        }
+
+        document.addEventListener('click', (event) => {
+            if (!root.contains(event.target)) hideResults();
+        });
+    });
+
     const taxOfficeDialog = qs('#tax-office-dialog');
     if (taxOfficeDialog) {
         const queryInput = qs('[data-tax-office-query]', taxOfficeDialog);

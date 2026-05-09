@@ -938,6 +938,52 @@ if ($page === 'tax_office_search') {
     exit;
 }
 
+if ($page === 'company_lookup_search') {
+    header('Content-Type: application/json; charset=utf-8');
+    $query = trim((string) ($_GET['q'] ?? ''));
+    $queryLength = function_exists('mb_strlen') ? mb_strlen($query, 'UTF-8') : strlen($query);
+    if ($queryLength < 3) {
+        echo json_encode(['items' => [], 'error' => null], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    if (company_source() === 'sqlserver') {
+        $items = array_map(static function (array $row): array {
+            return [
+                'company_id' => 0,
+                'sql_customer_id' => (int) ($row['sql_customer_id'] ?? $row['id']),
+                'label' => sql_customer_lookup_label($row),
+                'name' => (string) ($row['name'] ?? ''),
+                'code' => (string) ($row['account_code'] ?? ''),
+                'type' => (string) ($row['account_type'] ?? ''),
+                'meta' => trim((string) (($row['city'] ?? '') . ' ' . ($row['district'] ?? ''))),
+            ];
+        }, sql_customer_rows_for_company_list(18, null, 0, $query));
+        echo json_encode(['items' => $items, 'error' => bilnex_customer_reader()->lastError()], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    $where = ' WHERE (c.name LIKE :q OR c.account_code LIKE :q OR c.tax_no LIKE :q OR c.contact_person LIKE :q OR c.phone LIKE :q OR c.city LIKE :q)';
+    $params = [':q' => '%' . $query . '%'];
+    [$scopeSql, $scopeParams] = owned_company_condition('c');
+    $where .= $scopeSql;
+    $params += $scopeParams;
+    $items = array_map(static function (array $row): array {
+        return [
+            'company_id' => (int) $row['id'],
+            'sql_customer_id' => (int) ($row['sql_customer_id'] ?? 0),
+            'label' => company_lookup_label($row),
+            'name' => (string) ($row['name'] ?? ''),
+            'code' => (string) ($row['account_code'] ?? ''),
+            'type' => (string) ($row['account_type'] ?? ''),
+            'meta' => trim((string) (($row['contact_person'] ?? '') . ' ' . ($row['city'] ?? '') . ' ' . ($row['district'] ?? ''))),
+        ];
+    }, rows("SELECT c.id, c.sql_customer_id, c.name, c.account_code, c.account_type, c.contact_person, c.city, c.district FROM companies c {$where} ORDER BY CASE WHEN c.account_code = :exact THEN 0 WHEN c.name = :exact THEN 1 WHEN c.account_code LIKE :prefix THEN 2 WHEN c.name LIKE :prefix THEN 3 ELSE 4 END, c.name LIMIT 18", $params + [':exact' => $query, ':prefix' => $query . '%']));
+
+    echo json_encode(['items' => $items, 'error' => null], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($page === 'update_profile_photo') {
         $user = current_user();
@@ -1429,6 +1475,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($page === 'save_opportunity') {
         $id = (int) ($_POST['id'] ?? 0);
         $companyId = (int) ($_POST['company_id'] ?? 0);
+        $sqlCustomerId = (int) ($_POST['sql_customer_id'] ?? 0);
+        if ($sqlCustomerId > 0 && company_source() === 'sqlserver') {
+            $syncedCompanyId = ensure_local_company_for_sql_customer($sqlCustomerId, (int) current_user()['id']);
+            if (!$syncedCompanyId) {
+                flash('SQL cari bulunamadı veya okunamadı. Lütfen cari aramasından tekrar seçin.', 'danger');
+                redirect_to('opportunity_form', $id > 0 ? ['id' => $id] : []);
+            }
+            $companyId = $syncedCompanyId;
+        }
         if ($companyId <= 0) {
             $companyId = company_id_from_lookup($_POST['company_lookup'] ?? '');
         }
@@ -1449,13 +1504,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect_to('opportunity_form', $id > 0 ? ['id' => $id] : []);
         }
         require_company_access($companyId);
+        $sqlCustomerId = company_sql_customer_id($companyId) ?? ($sqlCustomerId > 0 ? $sqlCustomerId : null);
         $salesperson = (int) ($_POST['salesperson_id'] ?? current_user()['id']);
         if (!can_view_all()) {
             $salesperson = (int) current_user()['id'];
         }
         $data = [
             ':company_id' => $companyId,
-            ':sql_customer_id' => company_sql_customer_id($companyId),
+            ':sql_customer_id' => $sqlCustomerId,
             ':salesperson_id' => $salesperson,
             ':product_service' => trim($_POST['product_service'] ?? ''),
             ':estimated_amount' => (float) str_replace(',', '.', $_POST['estimated_amount'] ?? 0),
@@ -3057,38 +3113,30 @@ if ($page === 'opportunity_form') {
             require_company_access((int) $opp['company_id']);
         }
     }
-    $where = ' WHERE 1 = 1';
-    $params = [];
-    [$scopeSql, $scopeParams] = owned_company_condition('c');
-    $where .= $scopeSql;
-    $params += $scopeParams;
-    $companies = rows("SELECT c.id, c.name, c.account_code, c.account_type FROM companies c {$where} ORDER BY c.name", $params);
     $selectedCompanyId = (int) ($opp['company_id'] ?? ($_GET['company_id'] ?? 0));
     $selectedCompany = null;
-    if ($selectedCompanyId > 0) {
-        foreach ($companies as $company) {
-            if ((int) $company['id'] === $selectedCompanyId) {
-                $selectedCompany = $company;
-                break;
-            }
-        }
+    if ($selectedCompanyId > 0 && user_can_access_company($selectedCompanyId)) {
+        $selectedCompany = rows('SELECT c.id, c.sql_customer_id, c.name, c.account_code, c.account_type FROM companies c WHERE c.id = :id', [
+            ':id' => $selectedCompanyId,
+        ])[0] ?? null;
     }
     render_header($opp ? 'Fırsat Düzenle' : 'Yeni Satış Fırsatı');
     ?>
     <form class="panel form-grid" method="post" action="<?= e(app_url('save_opportunity')) ?>">
         <?= csrf_field() ?>
         <input type="hidden" name="id" value="<?= e($opp['id'] ?? 0) ?>">
-        <div class="form-field">
+        <div class="form-field company-autocomplete-field" data-company-autocomplete data-search-url="<?= e(app_url('company_lookup_search')) ?>">
             <label for="company_lookup">İlgili cari</label>
             <div class="field-action-row">
-                <input id="company_lookup" name="company_lookup" list="company_options" value="<?= e($selectedCompany ? company_lookup_label($selectedCompany) : '') ?>" placeholder="Cari kodu veya firma adı yazın..." required autocomplete="off">
+                <div class="company-autocomplete-box">
+                    <input type="hidden" name="company_id" value="<?= e($selectedCompany['id'] ?? '') ?>" data-company-id>
+                    <input type="hidden" name="sql_customer_id" value="<?= e($selectedCompany['sql_customer_id'] ?? '') ?>" data-company-sql-id>
+                    <input id="company_lookup" name="company_lookup" value="<?= e($selectedCompany ? company_lookup_label($selectedCompany) : '') ?>" placeholder="En az 3 harf yazın; cari kodu, firma adı, telefon veya il ara..." required autocomplete="off" data-company-search-input>
+                    <div class="company-autocomplete-results" data-company-search-results hidden></div>
+                </div>
                 <a class="btn" href="<?= e(app_url('company_form', ['return_to' => 'opportunity_form'])) ?>">Yeni cari ekle</a>
             </div>
-            <datalist id="company_options">
-                <?php foreach ($companies as $company): ?>
-                    <option value="<?= e(company_lookup_label($company)) ?>"></option>
-                <?php endforeach; ?>
-            </datalist>
+            <small class="field-hint">3 karakterden sonra arama otomatik başlar. Listeden cari seçince fırsat bu cariye bağlanır.</small>
         </div>
         <label>Satışçı
             <select name="salesperson_id"<?= can_view_all() ? '' : ' disabled' ?>>

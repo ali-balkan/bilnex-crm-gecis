@@ -21,9 +21,28 @@ final class CustomerReadRepository
         $typeWhere = $customerTypeId !== null ? " AND c.CustomerTypeId = {$customerTypeId}" : '';
         $params = [];
         $searchWhere = '';
+        $orderBy = 'ORDER BY c.Id DESC';
         $query = trim($query);
         if ($query !== '') {
             $searchWhere = ' AND (c.Name1 LIKE :query_name OR c.Name2 LIKE :query_contact OR c.Code LIKE :query_code OR c.TaxNumber LIKE :query_tax OR c.TaxOffice LIKE :query_tax_office OR addr.Phone LIKE :query_phone OR addr.EMail LIKE :query_email OR addr.CityName LIKE :query_city OR addr.CityCode LIKE :query_city_code OR addr.DistrictName LIKE :query_district OR addr.TownCode LIKE :query_town_code)';
+            $orderBy = "
+            ORDER BY
+                CASE
+                    WHEN c.Code = :query_exact_code THEN 0
+                    WHEN c.Name1 = :query_exact_name THEN 1
+                    WHEN c.Code LIKE :query_prefix_code THEN 2
+                    WHEN c.Name1 LIKE :query_prefix_name THEN 3
+                    WHEN c.Name2 LIKE :query_prefix_contact THEN 4
+                    ELSE 5
+                END,
+                c.Name1,
+                c.Id DESC
+            ";
+            $params[':query_exact_code'] = $query;
+            $params[':query_exact_name'] = $query;
+            $params[':query_prefix_code'] = $query . '%';
+            $params[':query_prefix_name'] = $query . '%';
+            $params[':query_prefix_contact'] = $query . '%';
             $params[':query_name'] = '%' . $query . '%';
             $params[':query_contact'] = '%' . $query . '%';
             $params[':query_code'] = '%' . $query . '%';
@@ -67,7 +86,7 @@ final class CustomerReadRepository
             FROM dbo.Customer c
             {$this->addressApplySql()}
             WHERE ISNULL(c.isDeleted, 0) = 0{$typeWhere}{$searchWhere}
-            ORDER BY c.Id DESC
+            {$orderBy}
             OFFSET {$offset} ROWS FETCH NEXT {$limit} ROWS ONLY
         ", $params);
     }

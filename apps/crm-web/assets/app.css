@@ -1100,6 +1100,82 @@ label {
     white-space: nowrap;
 }
 
+.field-hint {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.4;
+}
+
+.company-autocomplete-box {
+    position: relative;
+    min-width: 0;
+}
+
+.company-autocomplete-results {
+    position: absolute;
+    z-index: 30;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    display: grid;
+    gap: 7px;
+    max-height: min(360px, 52vh);
+    overflow: auto;
+    padding: 8px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 18px 42px rgba(6, 33, 72, .18);
+}
+
+.company-autocomplete-results[hidden] {
+    display: none;
+}
+
+.company-autocomplete-result {
+    display: grid;
+    gap: 4px;
+    width: 100%;
+    padding: 11px 12px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: #f7fbff;
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+}
+
+.company-autocomplete-result:hover,
+.company-autocomplete-result:focus {
+    border-color: var(--primary);
+    background: #eef8ff;
+    outline: 0;
+}
+
+.company-autocomplete-result strong,
+.company-autocomplete-result span {
+    overflow-wrap: anywhere;
+}
+
+.company-autocomplete-result span {
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.company-autocomplete-hint {
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #f7fbff;
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.company-autocomplete-hint.danger {
+    background: #fff5f4;
+    color: var(--danger);
+}
+
 input, select, textarea {
     width: 100%;
     min-height: 42px;
