@@ -1512,17 +1512,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $id = (int) ($_POST['id'] ?? 0);
         $companyId = (int) ($_POST['company_id'] ?? 0);
         $sqlCustomerId = (int) ($_POST['sql_customer_id'] ?? 0);
-        if ($sqlCustomerId > 0 && company_source() === 'sqlserver') {
-            $syncedCompanyId = ensure_local_company_for_sql_customer($sqlCustomerId, (int) current_user()['id']);
-            if (!$syncedCompanyId) {
-                flash('SQL cari bulunamadı veya okunamadı. Lütfen cari aramasından tekrar seçin.', 'danger');
-                redirect_to('opportunity_form', $id > 0 ? ['id' => $id] : []);
-            }
-            $companyId = $syncedCompanyId;
-        }
-        if ($companyId <= 0) {
-            $companyId = company_id_from_lookup($_POST['company_lookup'] ?? '');
-        }
+        $existing = null;
         if ($id > 0) {
             $existing = rows('SELECT company_id, salesperson_id FROM opportunities WHERE id = :id', [':id' => $id])[0] ?? null;
             if (!$existing) {
@@ -1534,6 +1524,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit('Bu satış fırsatını düzenleme yetkiniz yok.');
             }
             require_company_access((int) $existing['company_id']);
+        }
+        if ($companyId <= 0 && $sqlCustomerId > 0 && company_source() === 'sqlserver') {
+            $syncedCompanyId = null;
+            try {
+                $syncedCompanyId = ensure_local_company_for_sql_customer($sqlCustomerId, (int) current_user()['id']);
+            } catch (Throwable $exception) {
+                error_log('SQL customer sync failed while saving opportunity: ' . $exception->getMessage());
+            }
+            if (!$syncedCompanyId) {
+                if (!$existing) {
+                    flash('SQL cari bulunamadı veya okunamadı. Lütfen cari aramasından tekrar seçin.', 'danger');
+                    redirect_to('opportunity_form', []);
+                }
+            } else {
+                $companyId = $syncedCompanyId;
+            }
+        }
+        if ($companyId <= 0) {
+            $companyId = company_id_from_lookup($_POST['company_lookup'] ?? '');
+        }
+        if ($companyId <= 0 && $existing) {
+            $companyId = (int) $existing['company_id'];
         }
         if ($companyId <= 0) {
             flash('İlgili cari seçimi zorunludur.', 'danger');
