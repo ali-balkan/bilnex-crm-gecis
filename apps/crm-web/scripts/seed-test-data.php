@@ -59,6 +59,9 @@ foreach ($users as $user) {
 $companyIds = $pdo->query("SELECT id FROM companies WHERE source = 'Test verisi'")->fetchAll(PDO::FETCH_COLUMN);
 if ($companyIds) {
     $placeholders = implode(',', array_fill(0, count($companyIds), '?'));
+    $pdo->prepare("DELETE FROM interactions WHERE company_id IN ({$placeholders})")->execute($companyIds);
+    $pdo->prepare("DELETE FROM opportunities WHERE company_id IN ({$placeholders})")->execute($companyIds);
+    $pdo->prepare("DELETE FROM tasks WHERE company_id IN ({$placeholders})")->execute($companyIds);
     $pdo->prepare("DELETE FROM companies WHERE id IN ({$placeholders})")->execute($companyIds);
 }
 

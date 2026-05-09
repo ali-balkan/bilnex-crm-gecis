@@ -154,10 +154,18 @@ $insert = $pdo->prepare('
         (:name, :account_type, :account_code, :contact_person, :phone, :email, :city, :district, :address, :tax_no, :balance_amount, :balance_side, :status, :source, :responsible_user_id, NULL, :description, :created_by)
 ');
 
+$protectedRecords = [
+    'takip' => (int) $pdo->query('SELECT COUNT(*) FROM tasks')->fetchColumn(),
+    'gorusme' => (int) $pdo->query('SELECT COUNT(*) FROM interactions')->fetchColumn(),
+    'satis_firsati' => (int) $pdo->query('SELECT COUNT(*) FROM opportunities')->fetchColumn(),
+];
+$protectedTotal = array_sum($protectedRecords);
+if ($protectedTotal > 0) {
+    throw new RuntimeException('Takip, gorusme veya satis firsati kaydi varken reset/import calistirilamaz. Bu kayitlar silinmeyecek sekilde korunur.');
+}
+
 $pdo->beginTransaction();
 try {
-    $pdo->exec('DELETE FROM opportunities');
-    $pdo->exec('DELETE FROM interactions');
     $pdo->exec('DELETE FROM companies');
     $deleteUsers = $pdo->prepare('DELETE FROM users WHERE id <> :superadmin_id');
     $deleteUsers->execute([':superadmin_id' => $superadmin]);

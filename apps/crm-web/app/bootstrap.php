@@ -473,7 +473,7 @@ function init_db(): void
             note TEXT,
             next_followup_date TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE,
+            FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE RESTRICT,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
         );
 
@@ -489,7 +489,7 @@ function init_db(): void
             note TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE,
+            FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE RESTRICT,
             FOREIGN KEY (salesperson_id) REFERENCES users(id) ON DELETE SET NULL
         );
 

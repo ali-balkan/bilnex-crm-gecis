@@ -105,7 +105,14 @@ function Login($username, $password) {
 function Cleanup-RegressionData() {
     Php @'
 require 'app/bootstrap.php';
-db()->exec("DELETE FROM companies WHERE source IN ('Regression test', 'Smoke test')");
+$ids = db()->query("SELECT id FROM companies WHERE source IN ('Regression test', 'Smoke test')")->fetchAll(PDO::FETCH_COLUMN);
+if ($ids) {
+    $placeholders = implode(',', array_fill(0, count($ids), '?'));
+    db()->prepare("DELETE FROM interactions WHERE company_id IN ({$placeholders})")->execute($ids);
+    db()->prepare("DELETE FROM opportunities WHERE company_id IN ({$placeholders})")->execute($ids);
+    db()->prepare("DELETE FROM tasks WHERE company_id IN ({$placeholders})")->execute($ids);
+    db()->prepare("DELETE FROM companies WHERE id IN ({$placeholders})")->execute($ids);
+}
 db()->exec("DELETE FROM users WHERE username LIKE 'reg_%'");
 '@ | Out-Null
 }
@@ -211,7 +218,7 @@ Assert-True ($companyId -and $companyPage.Content -like "*$companyName*") "satÄ
 
 $shortLookup = (Invoke-WebRequest -Uri "$base/index.php?page=company_lookup_search&q=Re" -WebSession $sessions.sales -UseBasicParsing).Content | ConvertFrom-Json
 Assert-True (@($shortLookup.items).Count -eq 0) "fÄ±rsat cari aramasÄ± 3 karakterden Ã¶nce liste dÃ¶ndÃ¼rmez"
-$lookupQuery = [System.Net.WebUtility]::UrlEncode("Regression")
+$lookupQuery = [System.Net.WebUtility]::UrlEncode($companyName)
 $companyLookup = (Invoke-WebRequest -Uri "$base/index.php?page=company_lookup_search&q=$lookupQuery" -WebSession $sessions.sales -UseBasicParsing).Content | ConvertFrom-Json
 $lookupCompanyIds = @($companyLookup.items | ForEach-Object { [string]$_.company_id })
 Assert-True ($lookupCompanyIds -contains [string]$companyId) "fÄ±rsat cari aramasÄ± yazÄ±lan cariyi listeler"
@@ -266,6 +273,31 @@ $quickInteractionPage = Post-And-Follow "$base/index.php?page=save_interaction" 
     note = $quickInteractionNote
 } $sessions.sales
 Assert-True ($quickInteractionPage.Content -like "*$quickInteractionNote*" -and $quickInteractionPage.Content -like "*period-tabs*") "ana menÃ¼ gÃ¶rÃ¼ÅŸme sayfasÄ±ndan kayÄ±t eklenir"
+Assert-True ($quickInteractionPage.Content -notlike "*delete_interaction*") "gÃ¶rÃ¼ÅŸmelerde silme aksiyonu yok"
+
+$followupsForm = Invoke-WebRequest -Uri "$base/index.php?page=followups" -WebSession $sessions.sales -UseBasicParsing
+$salesUserId = [regex]::Match($followupsForm.Content, '<option value="(\d+)"[^>]*selected').Groups[1].Value
+Assert-True ($salesUserId -match '^\d+$') "test_satis kullanÄ±cÄ± id okunur"
+$taskToken = Extract-Token $followupsForm.Content
+$taskTitle = "Regression Korunan Takip $stamp"
+$taskPage = Post-And-Follow "$base/index.php?page=save_task" @{
+    csrf_token = $taskToken
+    id = 0
+    company_id = $companyId
+    title = $taskTitle
+    description = "Silinmeyecek takip testi"
+    assigned_to = $salesUserId
+    due_date = (Get-Date).AddDays(2).ToString("yyyy-MM-dd")
+    status = "AÃ§Ä±k"
+} $sessions.sales
+$taskId = @(Php "require 'app/bootstrap.php'; `$stmt = db()->prepare('SELECT id FROM tasks WHERE title = :title ORDER BY id DESC LIMIT 1'); `$stmt->execute([':title' => '$taskTitle']); echo `$stmt->fetchColumn();")[-1]
+Assert-True ($taskId -match '^\d+$') "takip kaydÄ± oluÅŸur"
+$followupsAfterTask = Invoke-WebRequest -Uri "$base/index.php?page=followups" -WebSession $sessions.sales -UseBasicParsing
+Assert-True ($followupsAfterTask.Content -notlike "*delete_task*") "takip listesinde silme aksiyonu yok"
+$deleteTaskToken = Extract-Token (Invoke-WebRequest -Uri "$base/index.php?page=followups" -WebSession $sessions.sales -UseBasicParsing).Content
+Post-And-Follow "$base/index.php?page=delete_task" @{ csrf_token = $deleteTaskToken; id = $taskId } $sessions.sales | Out-Null
+$taskStillExists = @(Php "require 'app/bootstrap.php'; `$stmt = db()->prepare('SELECT COUNT(*) FROM tasks WHERE id = :id'); `$stmt->execute([':id' => $taskId]); echo `$stmt->fetchColumn();")[-1]
+Assert-True ([int]$taskStillExists -eq 1) "takip silme endpointi kaydÄ± korur"
 
 $oppForm = Invoke-WebRequest -Uri "$base/index.php?page=opportunity_form&company_id=$companyId" -WebSession $sessions.sales -UseBasicParsing
 $oppToken = Extract-Token $oppForm.Content
@@ -299,6 +331,11 @@ Post-And-Follow "$base/index.php?page=save_opportunity" @{
 } $sessions.sales | Out-Null
 $oppUpdated = Invoke-WebRequest -Uri "$base/index.php?page=opportunities&q=$([System.Net.WebUtility]::UrlEncode($productUpdated))" -WebSession $sessions.sales -UseBasicParsing
 Assert-True ($oppUpdated.Content -like "*$productUpdated*") "satÄ±ÅŸ fÄ±rsatÄ± dÃ¼zenlenir"
+Assert-True ($oppUpdated.Content -notlike "*delete_opportunity*") "satÄ±ÅŸ fÄ±rsatlarÄ±nda silme aksiyonu yok"
+$beforeOpportunityDelete = @(Php "require 'app/bootstrap.php'; `$stmt = db()->prepare('SELECT COUNT(*) FROM opportunities WHERE id = :id'); `$stmt->execute([':id' => $oppId]); echo `$stmt->fetchColumn();")[-1]
+Post-And-Follow "$base/index.php?page=delete_opportunity" @{ csrf_token = $oppEditToken; id = $oppId } $sessions.sales | Out-Null
+$afterOpportunityDelete = @(Php "require 'app/bootstrap.php'; `$stmt = db()->prepare('SELECT COUNT(*) FROM opportunities WHERE id = :id'); `$stmt->execute([':id' => $oppId]); echo `$stmt->fetchColumn();")[-1]
+Assert-True ([int]$beforeOpportunityDelete -eq 1 -and [int]$afterOpportunityDelete -eq 1) "satÄ±ÅŸ fÄ±rsatÄ± silme endpointi kaydÄ± korur"
 
 $filterUrls = @(
     "$base/index.php?page=companies&q=Regression&status=Takipte&date_filter=month",

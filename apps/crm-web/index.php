@@ -1188,13 +1188,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($page === 'delete_task') {
-        if (!can_manage_users()) {
-            http_response_code(403);
-            exit('Bu işi silme yetkiniz yok.');
-        }
-        $taskId = (int) ($_POST['id'] ?? 0);
-        db()->prepare('DELETE FROM tasks WHERE id = :id')->execute([':id' => $taskId]);
-        flash('İş silindi.');
+        flash('Takip listesi kayıtları silinmez. Gerekirse işi düzenleyin veya Tamamlandı durumuna alın.', 'danger');
         redirect_to('followups');
     }
 
@@ -1556,13 +1550,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($page === 'delete_opportunity') {
-        if (!can_manage_users()) {
-            http_response_code(403);
-            exit('Bu satış fırsatını silme yetkiniz yok.');
-        }
-        $id = (int) ($_POST['id'] ?? 0);
-        db()->prepare('DELETE FROM opportunities WHERE id = :id')->execute([':id' => $id]);
-        flash('Satış fırsatı silindi.');
+        flash('Satış fırsatları silinmez. Gerekirse aşamasını güncelleyin.', 'danger');
         redirect_to('opportunities');
     }
 }
@@ -2725,13 +2713,6 @@ if ($page === 'followups') {
                         <?php else: ?>
                             <span class="muted">Tamamlama yetkisi atanan kişide.</span>
                         <?php endif; ?>
-                        <?php if (can_manage_users()): ?>
-                            <form method="post" action="<?= e(app_url('delete_task')) ?>" class="inline-form delete-form" data-confirm="Bu iş silinsin mi?">
-                                <?= csrf_field() ?>
-                                <input type="hidden" name="id" value="<?= e($row['id']) ?>">
-                                <button class="btn small danger" type="submit">Sil</button>
-                            </form>
-                        <?php endif; ?>
                     </div>
                 </article>
             <?php endforeach; ?>
@@ -3100,13 +3081,6 @@ if ($page === 'opportunities') {
                     <td><?= e($row['expected_close_date']) ?></td>
                     <td class="actions-cell">
                         <a class="btn small" href="<?= e(app_url('opportunity_form', ['id' => $row['id']])) ?>">Düzenle</a>
-                        <?php if (can_manage_users()): ?>
-                            <form method="post" action="<?= e(app_url('delete_opportunity')) ?>" class="inline-form delete-form" data-confirm="Bu satış fırsatı silinsin mi?">
-                                <?= csrf_field() ?>
-                                <input type="hidden" name="id" value="<?= e($row['id']) ?>">
-                                <button class="btn small danger" type="submit">Sil</button>
-                            </form>
-                        <?php endif; ?>
                     </td>
                 </tr>
             <?php endforeach; ?>
