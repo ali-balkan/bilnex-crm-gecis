@@ -1545,6 +1545,116 @@ tr[data-href]:hover td { background: #f3f9fe; }
     font-weight: 700;
 }
 
+.users-table-wrap {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+}
+
+.users-table {
+    table-layout: fixed;
+    min-width: 680px;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.users-table th {
+    padding: 11px 12px;
+    background: #f7fbff;
+    color: #344054;
+    border-bottom: 1px solid #cfe0ee;
+    white-space: nowrap;
+}
+
+.users-table td {
+    padding: 10px 12px;
+    vertical-align: middle;
+    overflow-wrap: normal;
+    word-break: normal;
+}
+
+.users-table th:nth-child(1),
+.users-table td:nth-child(1) { width: 42%; }
+.users-table th:nth-child(2),
+.users-table td:nth-child(2) { width: 29%; }
+.users-table th:nth-child(3),
+.users-table td:nth-child(3) { width: 15%; }
+.users-table th:nth-child(4),
+.users-table td:nth-child(4) {
+    width: 14%;
+    text-align: right;
+}
+
+.users-table tbody tr {
+    transition: background .15s ease, box-shadow .15s ease;
+}
+
+.users-table tbody tr:hover td {
+    background: #f8fbff;
+}
+
+.user-identity-cell strong {
+    display: block;
+    color: var(--primary-dark);
+    font-weight: 850;
+    line-height: 1.25;
+}
+
+.user-identity-cell small {
+    display: block;
+    margin-top: 2px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.role-badge,
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 850;
+    white-space: nowrap;
+}
+
+.role-badge.role-admin {
+    background: #ecf0ff;
+    color: #243aa9;
+}
+
+.role-badge.role-yonetici {
+    background: #e8f4ff;
+    color: #075a9c;
+}
+
+.role-badge.role-bayi-kanal-yoneticisi {
+    background: #e7f8f4;
+    color: #08745f;
+}
+
+.role-badge.role-bayi-kanal-uzmani {
+    background: #fff4d8;
+    color: #8a5600;
+}
+
+.role-badge.role-saha-satis {
+    background: #eef2f7;
+    color: #475467;
+}
+
+.status-pill.is-active {
+    background: #e8f8ed;
+    color: #1f7a3a;
+}
+
+.status-pill.is-passive {
+    background: #fff0ed;
+    color: var(--danger);
+}
+
 .opportunities-table {
     table-layout: fixed;
     min-width: 1180px;

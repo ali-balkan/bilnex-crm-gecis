@@ -1989,18 +1989,33 @@ if ($page === 'users') {
                 $userPerPage = 25;
                 $userOffset = ($userPage - 1) * $userPerPage;
                 $userTotal = (int) scalar("SELECT COUNT(*) FROM users {$userWhere}", $userParams);
-                $userRows = rows("SELECT * FROM users {$userWhere} ORDER BY created_at DESC LIMIT {$userPerPage} OFFSET {$userOffset}", $userParams);
+                $userRoleOrderSql = "CASE
+                    WHEN username = 'superadmin' THEN 0
+                    WHEN role = '" . ROLE_ADMIN . "' THEN 1
+                    WHEN role = '" . ROLE_MANAGER . "' THEN 2
+                    WHEN role = '" . ROLE_CHANNEL_MANAGER . "' THEN 3
+                    WHEN role IN ('" . ROLE_CHANNEL_SPECIALIST . "', '" . ROLE_LEGACY_CHANNEL . "') THEN 4
+                    WHEN role IN ('" . ROLE_FIELD_SALES . "', '" . ROLE_LEGACY_SALES . "') THEN 5
+                    ELSE 9
+                END";
+                $userRows = rows("SELECT * FROM users {$userWhere} ORDER BY {$userRoleOrderSql}, active DESC, full_name COLLATE NOCASE, username COLLATE NOCASE LIMIT {$userPerPage} OFFSET {$userOffset}", $userParams);
             ?>
-            <div class="table-wrap"><table>
-                <thead><tr><th>Ad</th><th>Kullanıcı adı</th><th>Rol</th><th>Durum</th><th></th></tr></thead>
+            <div class="table-wrap users-table-wrap"><table class="users-table">
+                <thead><tr><th>Kullanıcı</th><th>Yetki</th><th>Durum</th><th>Aksiyon</th></tr></thead>
                 <tbody>
                 <?php foreach ($userRows as $row): ?>
+                    <?php
+                        $normalizedRole = normalize_role($row['role'] ?? '');
+                        $roleClass = 'role-' . str_replace('_', '-', $normalizedRole);
+                    ?>
                     <tr data-href="<?= e(app_url('users', ['id' => $row['id']])) ?>">
-                        <td><?= e($row['full_name']) ?></td>
-                        <td><?= e($row['username']) ?></td>
-                        <td><?= e(role_label($row['role'])) ?></td>
-                        <td><?= $row['active'] ? 'Aktif' : 'Pasif' ?></td>
-                        <td><a class="btn small" href="<?= e(app_url('users', ['id' => $row['id']])) ?>">Düzenle</a></td>
+                        <td class="user-identity-cell">
+                            <strong><?= e($row['full_name']) ?></strong>
+                            <small>@<?= e($row['username']) ?></small>
+                        </td>
+                        <td><span class="role-badge <?= e($roleClass) ?>"><?= e(role_label($row['role'])) ?></span></td>
+                        <td><span class="status-pill <?= $row['active'] ? 'is-active' : 'is-passive' ?>"><?= $row['active'] ? 'Aktif' : 'Pasif' ?></span></td>
+                        <td class="actions-cell"><a class="btn small" href="<?= e(app_url('users', ['id' => $row['id']])) ?>">Düzenle</a></td>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>
