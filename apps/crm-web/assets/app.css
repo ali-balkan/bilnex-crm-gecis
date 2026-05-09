@@ -1475,6 +1475,10 @@ dialog.modal::backdrop {
     align-items: center;
 }
 
+.tax-office-picker .readonly-input {
+    cursor: default;
+}
+
 .lookup-button {
     width: 100%;
     min-height: 42px;

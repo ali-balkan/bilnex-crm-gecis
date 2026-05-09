@@ -155,4 +155,93 @@
             customerDialog.close();
         });
     }
+
+    const taxOfficeDialog = qs('#tax-office-dialog');
+    if (taxOfficeDialog) {
+        const queryInput = qs('[data-tax-office-query]', taxOfficeDialog);
+        const searchButton = qs('[data-tax-office-search]', taxOfficeDialog);
+        const results = qs('[data-tax-office-results]', taxOfficeDialog);
+        let activePicker = null;
+        let searchTimer = null;
+        const escapeHtml = (value) => String(value || '').replace(/[&<>"']/g, (char) => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;',
+        }[char]));
+        const setResults = (html) => {
+            if (results) results.innerHTML = html;
+        };
+        const taxOfficeSearch = async () => {
+            const query = (queryInput && queryInput.value ? queryInput.value : '').trim();
+            setResults('<div class="muted">Vergi daireleri aranıyor...</div>');
+            const url = new URL(taxOfficeDialog.dataset.searchUrl, window.location.href);
+            if (query !== '') {
+                url.searchParams.set('q', query);
+            }
+            try {
+                const response = await fetch(url.toString(), { headers: { Accept: 'application/json' } });
+                const payload = await response.json();
+                if (!payload.items || payload.items.length === 0) {
+                    setResults('<div class="empty-state">Bu aramayla vergi dairesi bulunamadı.</div>');
+                    return;
+                }
+                setResults(payload.items.map((item) => (
+                    '<button class="sql-customer-result" type="button" data-tax-office-select data-code="' + escapeHtml(item.code) + '" data-name="' + escapeHtml(item.name) + '" data-label="' + escapeHtml(item.label) + '">' +
+                    '<strong>' + escapeHtml(item.name || '-') + '</strong>' +
+                    '<span>' + escapeHtml(item.city || '-') + ' · ' + escapeHtml(item.district || '-') + (item.code ? ' · ' + escapeHtml(item.code) : '') + '</span>' +
+                    '</button>'
+                )).join(''));
+            } catch (error) {
+                setResults('<div class="alert alert-danger">Vergi dairesi listesi okunamadı.</div>');
+            }
+        };
+
+        qsa('[data-open-tax-office-picker]').forEach((button) => {
+            button.addEventListener('click', () => {
+                activePicker = button.closest('[data-tax-office-picker]');
+                const form = activePicker ? activePicker.closest('form') : null;
+                const currentName = form ? qs('[data-tax-office-name]', form) : null;
+                if (queryInput && currentName && currentName.value) {
+                    queryInput.value = currentName.value;
+                }
+                if (typeof taxOfficeDialog.showModal === 'function') {
+                    taxOfficeDialog.showModal();
+                }
+                taxOfficeSearch();
+                if (queryInput) {
+                    queryInput.focus();
+                    queryInput.select();
+                }
+            });
+        });
+
+        if (searchButton) {
+            searchButton.addEventListener('click', taxOfficeSearch);
+        }
+        if (queryInput) {
+            queryInput.addEventListener('input', () => {
+                window.clearTimeout(searchTimer);
+                searchTimer = window.setTimeout(taxOfficeSearch, 250);
+            });
+            queryInput.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    taxOfficeSearch();
+                }
+            });
+        }
+
+        taxOfficeDialog.addEventListener('click', (event) => {
+            const selectButton = event.target.closest('[data-tax-office-select]');
+            if (!selectButton || !activePicker) return;
+            const form = activePicker.closest('form');
+            const codeInput = form ? qs('[data-tax-office-code]', form) : null;
+            const nameInput = form ? qs('[data-tax-office-name]', form) : null;
+            if (codeInput) codeInput.value = selectButton.dataset.code || '';
+            if (nameInput) nameInput.value = selectButton.dataset.name || '';
+            taxOfficeDialog.close();
+        });
+    }
 }());

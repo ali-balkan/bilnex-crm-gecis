@@ -171,6 +171,9 @@ try {
         city = "İstanbul"
         district = "Kadıköy"
         address = "DashRpt test adresi"
+        tax_no = "1234567890"
+        tax_office = "5 Ocak Vergi Dairesi"
+        tax_office_code = "01251"
         status = "Takipte"
         source = $source
         description = "Dashboard report test company"

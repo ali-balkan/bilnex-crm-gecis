@@ -23,11 +23,12 @@ final class CustomerReadRepository
         $searchWhere = '';
         $query = trim($query);
         if ($query !== '') {
-            $searchWhere = ' AND (c.Name1 LIKE :query_name OR c.Name2 LIKE :query_contact OR c.Code LIKE :query_code OR c.TaxNumber LIKE :query_tax OR addr.Phone LIKE :query_phone OR addr.EMail LIKE :query_email OR addr.CityName LIKE :query_city OR addr.CityCode LIKE :query_city_code OR addr.DistrictName LIKE :query_district OR addr.TownCode LIKE :query_town_code)';
+            $searchWhere = ' AND (c.Name1 LIKE :query_name OR c.Name2 LIKE :query_contact OR c.Code LIKE :query_code OR c.TaxNumber LIKE :query_tax OR c.TaxOffice LIKE :query_tax_office OR addr.Phone LIKE :query_phone OR addr.EMail LIKE :query_email OR addr.CityName LIKE :query_city OR addr.CityCode LIKE :query_city_code OR addr.DistrictName LIKE :query_district OR addr.TownCode LIKE :query_town_code)';
             $params[':query_name'] = '%' . $query . '%';
             $params[':query_contact'] = '%' . $query . '%';
             $params[':query_code'] = '%' . $query . '%';
             $params[':query_tax'] = '%' . $query . '%';
+            $params[':query_tax_office'] = '%' . $query . '%';
             $params[':query_phone'] = '%' . $query . '%';
             $params[':query_email'] = '%' . $query . '%';
             $params[':query_city'] = '%' . $query . '%';
@@ -81,11 +82,12 @@ final class CustomerReadRepository
         $query = trim($query);
         if ($query !== '') {
             $addressApply = $this->addressApplySql();
-            $searchWhere = ' AND (c.Name1 LIKE :query_name OR c.Name2 LIKE :query_contact OR c.Code LIKE :query_code OR c.TaxNumber LIKE :query_tax OR addr.Phone LIKE :query_phone OR addr.EMail LIKE :query_email OR addr.CityName LIKE :query_city OR addr.CityCode LIKE :query_city_code OR addr.DistrictName LIKE :query_district OR addr.TownCode LIKE :query_town_code)';
+            $searchWhere = ' AND (c.Name1 LIKE :query_name OR c.Name2 LIKE :query_contact OR c.Code LIKE :query_code OR c.TaxNumber LIKE :query_tax OR c.TaxOffice LIKE :query_tax_office OR addr.Phone LIKE :query_phone OR addr.EMail LIKE :query_email OR addr.CityName LIKE :query_city OR addr.CityCode LIKE :query_city_code OR addr.DistrictName LIKE :query_district OR addr.TownCode LIKE :query_town_code)';
             $params[':query_name'] = '%' . $query . '%';
             $params[':query_contact'] = '%' . $query . '%';
             $params[':query_code'] = '%' . $query . '%';
             $params[':query_tax'] = '%' . $query . '%';
+            $params[':query_tax_office'] = '%' . $query . '%';
             $params[':query_phone'] = '%' . $query . '%';
             $params[':query_email'] = '%' . $query . '%';
             $params[':query_city'] = '%' . $query . '%';

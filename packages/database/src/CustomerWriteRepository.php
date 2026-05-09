@@ -34,7 +34,7 @@ final class CustomerWriteRepository
                 ':CustomerTaxType' => $taxType,
                 ':Name1' => $this->clip((string) ($data['name'] ?? ''), 100),
                 ':Name2' => $this->nullableClip((string) ($data['contact_person'] ?? ''), 100),
-                ':TaxOffice' => null,
+                ':TaxOffice' => $this->nullableClip((string) ($data['tax_office'] ?? ''), 250),
                 ':TaxNumber' => $this->nullableClip((string) ($data['tax_no'] ?? ''), 250),
                 ':Description' => $this->nullableClip((string) ($data['description'] ?? ''), 255),
                 ':StaffId' => 0,
@@ -107,6 +107,7 @@ final class CustomerWriteRepository
                     CustomerTaxType = :CustomerTaxType,
                     Name1 = :Name1,
                     Name2 = :Name2,
+                    TaxOffice = :TaxOffice,
                     TaxNumber = :TaxNumber,
                     Description = :Description
                 WHERE Id = :Id AND ISNULL(isDeleted, 0) = 0
@@ -116,6 +117,7 @@ final class CustomerWriteRepository
                 ':CustomerTaxType' => $taxType,
                 ':Name1' => $this->clip((string) ($data['name'] ?? ''), 100),
                 ':Name2' => $this->nullableClip((string) ($data['contact_person'] ?? ''), 100),
+                ':TaxOffice' => $this->nullableClip((string) ($data['tax_office'] ?? ''), 250),
                 ':TaxNumber' => $this->nullableClip((string) ($data['tax_no'] ?? ''), 250),
                 ':Description' => $this->nullableClip((string) ($data['description'] ?? ''), 255),
                 ':Id' => $id,

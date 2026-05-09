@@ -198,6 +198,9 @@ $companyPage = Post-And-Follow "$base/index.php?page=save_company" @{
     city = "Ä°stanbul"
     district = "KadÄ±kÃ¶y"
     address = "Regression adres"
+    tax_no = "1234567890"
+    tax_office = "5 Ocak Vergi Dairesi"
+    tax_office_code = "01251"
     status = "Yeni kayÄ±t"
     source = "Regression test"
     next_followup_date = (Get-Date).AddDays(1).ToString("yyyy-MM-dd")
@@ -219,6 +222,9 @@ $updatedCompany = Post-And-Follow "$base/index.php?page=save_company" @{
     city = "Ankara"
     district = "Ã‡ankaya"
     address = "Regression adres 2"
+    tax_no = "1234567890"
+    tax_office = "5 Ocak Vergi Dairesi"
+    tax_office_code = "01251"
     status = "Takipte"
     source = "Regression test"
     next_followup_date = (Get-Date).AddDays(3).ToString("yyyy-MM-dd")

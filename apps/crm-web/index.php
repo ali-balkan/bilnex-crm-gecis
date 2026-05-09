@@ -85,6 +85,40 @@ function dashboard_card(string $label, $value, string $hint = '', string $tone =
     echo '</' . $tag . '>';
 }
 
+function render_tax_office_picker_field(string $taxOffice = '', string $taxOfficeCode = ''): void
+{
+    $label = $taxOffice !== '' ? $taxOffice . ($taxOfficeCode !== '' ? ' (' . $taxOfficeCode . ')' : '') : 'Vergi dairesi seçin';
+    ?>
+    <div class="form-field">
+        <label>Vergi dairesi</label>
+        <input type="hidden" name="tax_office_code" value="<?= e($taxOfficeCode) ?>" data-tax-office-code>
+        <div class="field-action-row tax-office-picker" data-tax-office-picker>
+            <input class="readonly-input" name="tax_office" value="<?= e($taxOffice) ?>" data-tax-office-name placeholder="<?= e($label) ?>" required readonly aria-readonly="true">
+            <button class="btn small" type="button" data-open-tax-office-picker>Ara / seç</button>
+        </div>
+    </div>
+    <?php
+}
+
+function render_tax_office_dialog(): void
+{
+    ?>
+    <dialog class="modal sql-customer-dialog" id="tax-office-dialog" data-search-url="<?= e(app_url('tax_office_search')) ?>">
+        <div class="modal-head">
+            <strong>Vergi dairesi seç</strong>
+            <button class="btn small" type="button" data-close-dialog>Kapat</button>
+        </div>
+        <div class="modal-body sql-customer-search">
+            <div class="sql-search-row">
+                <input type="search" data-tax-office-query placeholder="İl, ilçe, kod veya vergi dairesi ara..." autocomplete="off">
+                <button class="btn primary" type="button" data-tax-office-search>Ara</button>
+            </div>
+            <div class="sql-customer-results" data-tax-office-results>Liste GİB verisinden yerel olarak okunuyor. Aramak için yazın.</div>
+        </div>
+    </dialog>
+    <?php
+}
+
 function render_bar_list(array $rows, string $labelKey, string $valueKey, string $empty = 'Veri yok'): void
 {
     $max = 0;
@@ -883,6 +917,27 @@ if ($page === 'sql_customer_search') {
     exit;
 }
 
+if ($page === 'tax_office_search') {
+    header('Content-Type: application/json; charset=utf-8');
+    $query = trim((string) ($_GET['q'] ?? ''));
+    $items = array_map(static function (array $item): array {
+        return [
+            'city' => (string) ($item['city'] ?? ''),
+            'district' => (string) ($item['district'] ?? ''),
+            'code' => (string) ($item['code'] ?? ''),
+            'name' => (string) ($item['name'] ?? ''),
+            'label' => (string) ($item['label'] ?? tax_office_label($item)),
+        ];
+    }, tax_office_search($query, 50));
+
+    echo json_encode([
+        'items' => $items,
+        'source' => tax_office_payload()['source'] ?? 'GİB vergi daireleri listesi',
+        'document_date' => tax_office_payload()['document_date'] ?? null,
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($page === 'update_profile_photo') {
         $user = current_user();
@@ -1144,19 +1199,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $existingAccountCode = '';
         $existingBalanceAmount = 0.0;
         $existingBalanceSide = '';
+        $existingSource = '';
         if ($id > 0) {
-            $existingCompany = rows('SELECT sql_customer_id, account_code, balance_amount, balance_side FROM companies WHERE id = :id', [':id' => $id])[0] ?? [];
+            $existingCompany = rows('SELECT sql_customer_id, account_code, balance_amount, balance_side, source FROM companies WHERE id = :id', [':id' => $id])[0] ?? [];
             $currentSqlCustomerId = (int) ($existingCompany['sql_customer_id'] ?? 0);
             $existingSqlCustomerId = $currentSqlCustomerId > 0 ? $currentSqlCustomerId : null;
             $existingAccountCode = (string) ($existingCompany['account_code'] ?? '');
             $existingBalanceAmount = (float) ($existingCompany['balance_amount'] ?? 0);
             $existingBalanceSide = (string) ($existingCompany['balance_side'] ?? '');
+            $existingSource = (string) ($existingCompany['source'] ?? '');
         }
         $responsible = (int) ($_POST['responsible_user_id'] ?? current_user()['id']);
         if (!can_view_all()) {
             $responsible = (int) current_user()['id'];
         }
         $submittedAccountType = trim((string) ($_POST['account_type'] ?? ''));
+        $submittedTaxNo = phone_digits($_POST['tax_no'] ?? '');
+        $submittedTaxOffice = trim((string) ($_POST['tax_office'] ?? ''));
+        $submittedTaxOfficeCode = trim((string) ($_POST['tax_office_code'] ?? ''));
+        $taxOffice = tax_office_find($submittedTaxOfficeCode, $submittedTaxOffice);
+        if ($taxOffice) {
+            $submittedTaxOffice = (string) ($taxOffice['name'] ?? $submittedTaxOffice);
+            $submittedTaxOfficeCode = (string) ($taxOffice['code'] ?? $submittedTaxOfficeCode);
+        }
         $data = [
             ':name' => trim($_POST['name'] ?? ''),
             ':sql_customer_id' => $existingSqlCustomerId,
@@ -1168,11 +1233,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ':city' => trim($_POST['city'] ?? ''),
             ':district' => trim($_POST['district'] ?? ''),
             ':address' => trim($_POST['address'] ?? ''),
-            ':tax_no' => trim($_POST['tax_no'] ?? ''),
+            ':tax_no' => $submittedTaxNo,
+            ':tax_office' => $submittedTaxOffice,
+            ':tax_office_code' => $submittedTaxOfficeCode,
             ':balance_amount' => array_key_exists('balance_amount', $_POST) ? (float) str_replace(',', '.', $_POST['balance_amount']) : $existingBalanceAmount,
             ':balance_side' => array_key_exists('balance_side', $_POST) ? trim($_POST['balance_side']) : $existingBalanceSide,
             ':status' => $_POST['status'] ?? 'Yeni kayıt',
-            ':source' => trim($_POST['source'] ?? ''),
+            ':source' => trim($_POST['source'] ?? ($existingSource !== '' ? $existingSource : 'CRM manuel kayıt')),
             ':responsible_user_id' => $responsible,
             ':description' => trim($_POST['description'] ?? ''),
         ];
@@ -1181,6 +1248,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         if ($data[':name'] === '') {
             flash('Cari adı zorunludur.', 'danger');
+            redirect_to('company_form', $id > 0 ? ['id' => $id] + $companyFormParams : $companyFormParams);
+        }
+        if (!in_array(strlen($data[':tax_no']), [10, 11], true)) {
+            flash('Vergi no zorunludur ve 10 ya da 11 haneli olmalıdır.', 'danger');
+            redirect_to('company_form', $id > 0 ? ['id' => $id] + $companyFormParams : $companyFormParams);
+        }
+        if (!$taxOffice) {
+            flash('Vergi dairesi zorunludur. Lütfen listedeki GİB vergi dairelerinden birini seçin.', 'danger');
             redirect_to('company_form', $id > 0 ? ['id' => $id] + $companyFormParams : $companyFormParams);
         }
         if (company_source() === 'sqlserver' && $id === 0) {
@@ -1195,13 +1270,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'district' => $data[':district'],
                     'address' => $data[':address'],
                     'tax_no' => $data[':tax_no'],
+                    'tax_office' => $data[':tax_office'],
                     'description' => $data[':description'],
                 ]);
                 $data[':sql_customer_id'] = (int) $created['id'];
                 $data[':account_code'] = (string) $created['code'];
                 $data[':source'] = 'SQL Server Customer';
                 $data[':created_by'] = current_user()['id'];
-                db()->prepare('INSERT INTO companies (name, sql_customer_id, account_type, account_code, contact_person, phone, email, city, district, address, tax_no, balance_amount, balance_side, status, source, responsible_user_id, description, created_by) VALUES (:name, :sql_customer_id, :account_type, :account_code, :contact_person, :phone, :email, :city, :district, :address, :tax_no, :balance_amount, :balance_side, :status, :source, :responsible_user_id, :description, :created_by)')->execute($data);
+                db()->prepare('INSERT INTO companies (name, sql_customer_id, account_type, account_code, contact_person, phone, email, city, district, address, tax_no, tax_office, tax_office_code, balance_amount, balance_side, status, source, responsible_user_id, description, created_by) VALUES (:name, :sql_customer_id, :account_type, :account_code, :contact_person, :phone, :email, :city, :district, :address, :tax_no, :tax_office, :tax_office_code, :balance_amount, :balance_side, :status, :source, :responsible_user_id, :description, :created_by)')->execute($data);
                 $id = (int) db()->lastInsertId();
                 flash('Cari SQL Server kaydına yazıldı. Cari kodu: ' . $created['code']);
                 if ($returnTo === 'opportunity_form') {
@@ -1216,11 +1292,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         if ($id > 0) {
             $data[':id'] = $id;
-            db()->prepare('UPDATE companies SET name = :name, sql_customer_id = :sql_customer_id, account_type = :account_type, account_code = :account_code, contact_person = :contact_person, phone = :phone, email = :email, city = :city, district = :district, address = :address, tax_no = :tax_no, balance_amount = :balance_amount, balance_side = :balance_side, status = :status, source = :source, responsible_user_id = :responsible_user_id, description = :description, updated_at = CURRENT_TIMESTAMP WHERE id = :id')->execute($data);
+            db()->prepare('UPDATE companies SET name = :name, sql_customer_id = :sql_customer_id, account_type = :account_type, account_code = :account_code, contact_person = :contact_person, phone = :phone, email = :email, city = :city, district = :district, address = :address, tax_no = :tax_no, tax_office = :tax_office, tax_office_code = :tax_office_code, balance_amount = :balance_amount, balance_side = :balance_side, status = :status, source = :source, responsible_user_id = :responsible_user_id, description = :description, updated_at = CURRENT_TIMESTAMP WHERE id = :id')->execute($data);
             flash('Cari kartı güncellendi.');
         } else {
             $data[':created_by'] = current_user()['id'];
-            db()->prepare('INSERT INTO companies (name, sql_customer_id, account_type, account_code, contact_person, phone, email, city, district, address, tax_no, balance_amount, balance_side, status, source, responsible_user_id, description, created_by) VALUES (:name, :sql_customer_id, :account_type, :account_code, :contact_person, :phone, :email, :city, :district, :address, :tax_no, :balance_amount, :balance_side, :status, :source, :responsible_user_id, :description, :created_by)')->execute($data);
+            db()->prepare('INSERT INTO companies (name, sql_customer_id, account_type, account_code, contact_person, phone, email, city, district, address, tax_no, tax_office, tax_office_code, balance_amount, balance_side, status, source, responsible_user_id, description, created_by) VALUES (:name, :sql_customer_id, :account_type, :account_code, :contact_person, :phone, :email, :city, :district, :address, :tax_no, :tax_office, :tax_office_code, :balance_amount, :balance_side, :status, :source, :responsible_user_id, :description, :created_by)')->execute($data);
             $id = (int) db()->lastInsertId();
             flash('Cari kartı oluşturuldu.');
         }
@@ -1240,9 +1316,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $name = trim((string) ($_POST['name'] ?? ''));
         $submittedAccountType = trim((string) ($_POST['account_type'] ?? ''));
         $accountType = normalize_company_account_type($submittedAccountType !== '' ? $submittedAccountType : 'Hedef Bayi');
+        $submittedTaxNo = phone_digits($_POST['tax_no'] ?? '');
+        $submittedTaxOffice = trim((string) ($_POST['tax_office'] ?? ''));
+        $submittedTaxOfficeCode = trim((string) ($_POST['tax_office_code'] ?? ''));
+        $taxOffice = tax_office_find($submittedTaxOfficeCode, $submittedTaxOffice);
+        if ($taxOffice) {
+            $submittedTaxOffice = (string) ($taxOffice['name'] ?? $submittedTaxOffice);
+            $submittedTaxOfficeCode = (string) ($taxOffice['code'] ?? $submittedTaxOfficeCode);
+        }
         if ($sqlCustomerId <= 0 || $name === '') {
             flash('Cari adı zorunludur.', 'danger');
             redirect_to('sql_company_form', $sqlCustomerId > 0 ? ['id' => $sqlCustomerId] : []);
+        }
+
+        if (!in_array(strlen($submittedTaxNo), [10, 11], true)) {
+            flash('Vergi no zorunludur ve 10 ya da 11 haneli olmalıdır.', 'danger');
+            redirect_to('sql_company_form', ['id' => $sqlCustomerId]);
+        }
+        if (!$taxOffice) {
+            flash('Vergi dairesi zorunludur. Lütfen listedeki GİB vergi dairelerinden birini seçin.', 'danger');
+            redirect_to('sql_company_form', ['id' => $sqlCustomerId]);
         }
 
         try {
@@ -1255,7 +1348,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'city' => trim((string) ($_POST['city'] ?? '')),
                 'district' => trim((string) ($_POST['district'] ?? '')),
                 'address' => trim((string) ($_POST['address'] ?? '')),
-                'tax_no' => trim((string) ($_POST['tax_no'] ?? '')),
+                'tax_no' => $submittedTaxNo,
+                'tax_office' => $submittedTaxOffice,
                 'description' => trim((string) ($_POST['description'] ?? '')),
             ]);
             ensure_local_company_for_sql_customer($sqlCustomerId, (int) current_user()['id']);
@@ -1738,7 +1832,7 @@ if ($page === 'companies') {
     $where .= $scopeSql;
     $params += $scopeParams;
     if (!empty($_GET['q'])) {
-        $where .= ' AND (c.name LIKE :q OR c.account_code LIKE :q OR c.tax_no LIKE :q OR c.contact_person LIKE :q OR c.phone LIKE :q OR c.email LIKE :q OR c.city LIKE :q)';
+        $where .= ' AND (c.name LIKE :q OR c.account_code LIKE :q OR c.tax_no LIKE :q OR c.tax_office LIKE :q OR c.contact_person LIKE :q OR c.phone LIKE :q OR c.email LIKE :q OR c.city LIKE :q)';
         $params[':q'] = '%' . $_GET['q'] . '%';
     }
     if (!$usingSqlServerCompanies && !empty($_GET['status'])) {
@@ -1839,6 +1933,7 @@ if ($page === 'companies') {
                             <a href="<?= e(app_url('company_view', ['id' => $row['id']])) ?>"><?= e($row['name']) ?></a>
                         <?php endif; ?>
                         <?php if (!empty($row['tax_no'])): ?><small>Vergi no: <?= e($row['tax_no']) ?></small><?php endif; ?>
+                        <?php if (!empty($row['tax_office'])): ?><small>Vergi dairesi: <?= e($row['tax_office']) ?></small><?php endif; ?>
                     </td>
                     <td><span class="badge soft"><?= e($row['account_type'] ?? 'İş Ortağı') ?></span></td>
                     <td><?= e($row['contact_person'] ?: '-') ?></td>
@@ -1895,7 +1990,8 @@ if ($page === 'sql_company_form') {
                 </select>
             </label>
             <label>Yetkili kişi <input name="contact_person" value="<?= e($company['contact_person']) ?>"></label>
-            <label>Vergi no <input name="tax_no" value="<?= e($company['tax_no']) ?>"></label>
+            <label>Vergi no <input name="tax_no" value="<?= e($company['tax_no']) ?>" inputmode="numeric" required></label>
+            <?php render_tax_office_picker_field($company['tax_office'] ?? '', $company['tax_office_code'] ?? ''); ?>
             <label>Telefon <input name="phone" value="<?= e($company['phone']) ?>"></label>
             <label>E-posta <input type="email" name="email" value="<?= e($company['email']) ?>"></label>
             <label>İl <input name="city" value="<?= e($company['city']) ?>"></label>
@@ -1907,6 +2003,7 @@ if ($page === 'sql_company_form') {
                 <button class="btn primary" type="submit">SQL kaydını güncelle</button>
             </div>
         </form>
+        <?php render_tax_office_dialog(); ?>
     <?php endif;
     render_footer();
     exit;
@@ -1942,7 +2039,8 @@ if ($page === 'company_form') {
             </select>
         </label>
         <label>Yetkili kişi <input name="contact_person" value="<?= e($company['contact_person'] ?? '') ?>"></label>
-        <label>Vergi no <input name="tax_no" value="<?= e($company['tax_no'] ?? '') ?>"></label>
+        <label>Vergi no <input name="tax_no" value="<?= e($company['tax_no'] ?? '') ?>" inputmode="numeric" required></label>
+        <?php render_tax_office_picker_field($company['tax_office'] ?? '', $company['tax_office_code'] ?? ''); ?>
         <label>Telefon <input name="phone" value="<?= e($company['phone'] ?? '') ?>"></label>
         <label>E-posta <input type="email" name="email" value="<?= e($company['email'] ?? '') ?>"></label>
         <label>İl <input name="city" value="<?= e($company['city'] ?? '') ?>"></label>
@@ -1957,7 +2055,6 @@ if ($page === 'company_form') {
                 </select>
             </label>
         <?php endif; ?>
-        <label>Kaynak <input name="source" value="<?= e($company['source'] ?? '') ?>"></label>
         <label>Sorumlu personel
             <select name="responsible_user_id"<?= can_view_all() ? '' : ' disabled' ?>>
                 <?php foreach (active_users() as $user): ?>
@@ -1971,6 +2068,7 @@ if ($page === 'company_form') {
             <?php if ($company): ?><a class="btn" href="<?= e(app_url('company_view', ['id' => $company['id']])) ?>">Kartı aç</a><?php endif; ?>
         </div>
     </form>
+    <?php render_tax_office_dialog(); ?>
     <?php
     render_footer();
     exit;
@@ -2221,8 +2319,8 @@ if ($page === 'company_view') {
                 <dt>SQL Customer Id</dt><dd><?= e($company['sql_customer_id'] ?? '-') ?></dd>
                 <dt>Cari kodu</dt><dd><?= e($company['account_code'] ?? '') ?></dd>
                 <dt>Vergi no</dt><dd><?= e($company['tax_no'] ?? '') ?></dd>
+                <dt>Vergi dairesi</dt><dd><?= e($company['tax_office'] ?? '') ?></dd>
                 <dt>Bakiye</dt><dd><?= e(money($company['balance_amount'] ?? 0)) ?> <?= e($company['balance_side'] ?? '') ?></dd>
-                <dt>Kaynak</dt><dd><?= e($company['source']) ?></dd>
                 <dt>Sorumlu</dt><dd><?= e($company['responsible_name']) ?></dd>
                 <dt>Sonraki takip</dt><dd><?= e($company['next_followup_date']) ?></dd>
                 <dt>Açıklama</dt><dd><?= nl2br(e($company['description'])) ?></dd>

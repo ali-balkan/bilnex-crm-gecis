@@ -157,6 +157,9 @@ $companyResponse = Post-And-Follow "$base/index.php?page=save_company" @{
     city = "Istanbul"
     district = "Kadikoy"
     address = "Smoke test adresi"
+    tax_no = "1234567890"
+    tax_office = "5 Ocak Vergi Dairesi"
+    tax_office_code = "01251"
     status = "Yeni kayıt"
     source = "Smoke test"
     next_followup_date = (Get-Date).AddDays(1).ToString("yyyy-MM-dd")

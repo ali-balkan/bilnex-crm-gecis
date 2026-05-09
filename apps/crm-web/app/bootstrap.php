@@ -104,6 +104,107 @@ function company_source(): string
     return app_config('company_source') === 'sqlserver' ? 'sqlserver' : 'sqlite';
 }
 
+function tax_offices_path(): string
+{
+    return __DIR__ . '/../resources/tax-offices.json';
+}
+
+function tax_office_payload(): array
+{
+    static $payload = null;
+    if (is_array($payload)) {
+        return $payload;
+    }
+
+    $path = tax_offices_path();
+    if (!is_file($path)) {
+        $payload = ['items' => []];
+        return $payload;
+    }
+
+    $decoded = json_decode((string) file_get_contents($path), true);
+    $payload = is_array($decoded) ? $decoded : ['items' => []];
+    if (!isset($payload['items']) || !is_array($payload['items'])) {
+        $payload['items'] = [];
+    }
+
+    return $payload;
+}
+
+function tax_office_items(): array
+{
+    return tax_office_payload()['items'];
+}
+
+function tax_office_search_key(string $value): string
+{
+    $value = trim($value);
+    $value = strtr($value, [
+        'Ç' => 'c', 'Ğ' => 'g', 'İ' => 'i', 'I' => 'i', 'Ö' => 'o', 'Ş' => 's', 'Ü' => 'u',
+        'Â' => 'a', 'Î' => 'i', 'Û' => 'u',
+        'ç' => 'c', 'ğ' => 'g', 'ı' => 'i', 'i' => 'i', 'ö' => 'o', 'ş' => 's', 'ü' => 'u',
+        'â' => 'a', 'î' => 'i', 'û' => 'u',
+    ]);
+    $value = strtolower($value);
+    return preg_replace('/[^a-z0-9]+/', ' ', $value) ?? $value;
+}
+
+function tax_office_label(array $item): string
+{
+    $parts = array_filter([
+        trim((string) ($item['city'] ?? '')),
+        trim((string) ($item['district'] ?? '')),
+        trim((string) ($item['name'] ?? '')),
+    ]);
+    $label = implode(' / ', $parts);
+    $code = trim((string) ($item['code'] ?? ''));
+    return $label . ($code !== '' ? ' (' . $code . ')' : '');
+}
+
+function tax_office_search(string $query = '', int $limit = 40): array
+{
+    $queryKey = tax_office_search_key($query);
+    $limit = max(1, min(80, $limit));
+    $items = [];
+
+    foreach (tax_office_items() as $item) {
+        $haystack = tax_office_search_key(implode(' ', [
+            $item['city_code'] ?? '',
+            $item['city'] ?? '',
+            $item['district'] ?? '',
+            $item['code'] ?? '',
+            $item['name'] ?? '',
+        ]));
+        if ($queryKey !== '' && !str_contains($haystack, $queryKey)) {
+            continue;
+        }
+        $items[] = $item + ['label' => tax_office_label($item)];
+        if (count($items) >= $limit) {
+            break;
+        }
+    }
+
+    return $items;
+}
+
+function tax_office_find(string $code, string $name): ?array
+{
+    $code = trim($code);
+    $name = trim($name);
+    $nameKey = tax_office_search_key($name);
+    foreach (tax_office_items() as $item) {
+        $itemCode = trim((string) ($item['code'] ?? ''));
+        if ($code !== '' && $itemCode === $code) {
+            return $item;
+        }
+        if ($code === '' && $nameKey !== '' && tax_office_search_key((string) ($item['name'] ?? '')) === $nameKey) {
+            return $item;
+        }
+    }
+
+    return null;
+}
+
 function sql_customer_type_label(int $customerTypeId): string
 {
     return company_account_type_by_sql_id($customerTypeId) ?? 'Müşteri';
@@ -230,6 +331,8 @@ function sql_customer_row_to_company_row(array $row): array
         'district' => $row['District'] ?? '',
         'address' => $address,
         'tax_no' => display_tax_no($row['TaxNumber'] ?? ''),
+        'tax_office' => trim((string) ($row['TaxOffice'] ?? '')),
+        'tax_office_code' => '',
         'description' => $row['Description'] ?? '',
         'status' => !empty($row['isActive']) ? 'Aktif' : 'Pasif',
         'responsible_name' => '',
@@ -281,6 +384,8 @@ function ensure_local_company_for_sql_customer(int $sqlCustomerId, ?int $userId 
         ':district' => trim((string) $customer['district']),
         ':address' => trim((string) $customer['address']),
         ':tax_no' => trim((string) $customer['tax_no']),
+        ':tax_office' => trim((string) ($customer['tax_office'] ?? '')),
+        ':tax_office_code' => trim((string) ($customer['tax_office_code'] ?? '')),
         ':status' => $customer['status'] === 'Pasif' ? 'Pasif' : 'Aktif',
         ':source' => 'SQL Server Customer',
         ':responsible_user_id' => $userId,
@@ -288,12 +393,12 @@ function ensure_local_company_for_sql_customer(int $sqlCustomerId, ?int $userId 
 
     if ($existingId > 0) {
         $data[':id'] = $existingId;
-        db()->prepare('UPDATE companies SET name = :name, account_type = :account_type, account_code = :account_code, contact_person = :contact_person, phone = :phone, email = :email, city = :city, district = :district, address = :address, tax_no = :tax_no, status = :status, source = :source, responsible_user_id = COALESCE(responsible_user_id, :responsible_user_id), updated_at = CURRENT_TIMESTAMP WHERE id = :id')->execute($data);
+        db()->prepare('UPDATE companies SET name = :name, account_type = :account_type, account_code = :account_code, contact_person = :contact_person, phone = :phone, email = :email, city = :city, district = :district, address = :address, tax_no = :tax_no, tax_office = :tax_office, tax_office_code = :tax_office_code, status = :status, source = :source, responsible_user_id = COALESCE(responsible_user_id, :responsible_user_id), updated_at = CURRENT_TIMESTAMP WHERE id = :id')->execute($data);
         return $existingId;
     }
 
     $data[':created_by'] = $userId;
-    db()->prepare('INSERT INTO companies (sql_customer_id, name, account_type, account_code, contact_person, phone, email, city, district, address, tax_no, status, source, responsible_user_id, created_by) VALUES (:sql_customer_id, :name, :account_type, :account_code, :contact_person, :phone, :email, :city, :district, :address, :tax_no, :status, :source, :responsible_user_id, :created_by)')->execute($data);
+    db()->prepare('INSERT INTO companies (sql_customer_id, name, account_type, account_code, contact_person, phone, email, city, district, address, tax_no, tax_office, tax_office_code, status, source, responsible_user_id, created_by) VALUES (:sql_customer_id, :name, :account_type, :account_code, :contact_person, :phone, :email, :city, :district, :address, :tax_no, :tax_office, :tax_office_code, :status, :source, :responsible_user_id, :created_by)')->execute($data);
     return (int) db()->lastInsertId();
 }
 
@@ -341,6 +446,8 @@ function init_db(): void
             district TEXT,
             address TEXT,
             tax_no TEXT,
+            tax_office TEXT,
+            tax_office_code TEXT,
             balance_amount REAL NOT NULL DEFAULT 0,
             balance_side TEXT,
             status TEXT NOT NULL DEFAULT 'Yeni kayıt',
@@ -425,6 +532,12 @@ function init_db(): void
     }
     if (!in_array('tax_no', $companyColumnNames, true)) {
         $pdo->exec("ALTER TABLE companies ADD COLUMN tax_no TEXT");
+    }
+    if (!in_array('tax_office', $companyColumnNames, true)) {
+        $pdo->exec("ALTER TABLE companies ADD COLUMN tax_office TEXT");
+    }
+    if (!in_array('tax_office_code', $companyColumnNames, true)) {
+        $pdo->exec("ALTER TABLE companies ADD COLUMN tax_office_code TEXT");
     }
     if (!in_array('balance_amount', $companyColumnNames, true)) {
         $pdo->exec("ALTER TABLE companies ADD COLUMN balance_amount REAL NOT NULL DEFAULT 0");
