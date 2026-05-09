@@ -1691,7 +1691,15 @@ if ($page === 'dashboard') {
         echo '<article class="panel chart-panel wide-panel"><div class="section-title"><h2>Satış Pipeline</h2><a class="btn small" href="' . e(app_url('opportunities')) . '">Fırsatlar</a></div>';
         echo '<div class="pipeline">';
         foreach ($pipeline as $row) {
-            echo '<div class="pipeline-step"><span>' . e($row['stage']) . '</span><strong>' . e($row['total']) . '</strong><small>' . e(money($row['amount'])) . '</small></div>';
+            $stageClass = match ($row['stage'] ?? '') {
+                'Görüşme yapılıyor' => 'stage-meeting',
+                'Teklif verildi' => 'stage-offer',
+                'Sözleşme bekleniyor' => 'stage-contract',
+                'Kazanıldı' => 'stage-won',
+                'Kaybedildi' => 'stage-lost',
+                default => 'stage-new',
+            };
+            echo '<div class="pipeline-step ' . e($stageClass) . '"><span>' . e($row['stage']) . '</span><strong>' . e($row['total']) . '</strong><small>' . e(money($row['amount'])) . '</small></div>';
         }
         if (!$pipeline) {
             echo '<p class="muted">Satış fırsatı yok.</p>';

@@ -2672,7 +2672,7 @@ dialog.modal::backdrop {
 
 .page-dashboard .dashboard-main-grid {
     grid-template-columns: minmax(280px, 1fr) minmax(330px, 1.05fr) minmax(360px, 1.18fr);
-    align-items: start;
+    align-items: stretch;
     margin-bottom: 22px;
 }
 
@@ -2681,7 +2681,9 @@ dialog.modal::backdrop {
 }
 
 .page-dashboard .chart-panel {
-    min-height: 312px;
+    height: 322px;
+    min-height: 322px;
+    overflow: hidden;
 }
 
 .page-dashboard .section-title h2,
@@ -2726,16 +2728,16 @@ dialog.modal::backdrop {
 
 .page-dashboard .pipeline {
     grid-template-columns: 1fr;
-    gap: 9px;
-    align-content: center;
+    gap: 6px;
+    align-content: start;
 }
 
 .page-dashboard .pipeline-step {
-    min-height: 48px;
+    min-height: 34px;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    padding: 10px 18px;
-    margin-inline: calc(var(--pipe-inset, 0) * 1px);
+    padding: 6px 14px;
+    margin-inline: min(calc(var(--pipe-inset, 0) * 1px), 56px);
     border: 0;
     border-radius: 9px;
     background: linear-gradient(135deg, #236ee9, #127cf2);
@@ -2743,11 +2745,12 @@ dialog.modal::backdrop {
     box-shadow: 0 12px 22px rgba(6, 33, 72, .13);
 }
 
-.page-dashboard .pipeline-step:nth-child(2) { --pipe-inset: 18; background: linear-gradient(135deg, #28bad0, #35c7de); }
-.page-dashboard .pipeline-step:nth-child(3) { --pipe-inset: 36; background: linear-gradient(135deg, #705de4, #8464ef); }
-.page-dashboard .pipeline-step:nth-child(4) { --pipe-inset: 54; background: linear-gradient(135deg, #f4a72a, #ffbf4f); }
-.page-dashboard .pipeline-step:nth-child(5) { --pipe-inset: 72; background: linear-gradient(135deg, #25bb80, #4bd095); }
-.page-dashboard .pipeline-step:nth-child(6) { --pipe-inset: 90; background: linear-gradient(135deg, #90a4bc, #b1bfcd); }
+.page-dashboard .pipeline-step.stage-new { --pipe-inset: 0; background: linear-gradient(135deg, #236ee9, #127cf2); }
+.page-dashboard .pipeline-step.stage-meeting { --pipe-inset: 12; background: linear-gradient(135deg, #28bad0, #35c7de); }
+.page-dashboard .pipeline-step.stage-offer { --pipe-inset: 24; background: linear-gradient(135deg, #705de4, #8464ef); }
+.page-dashboard .pipeline-step.stage-contract { --pipe-inset: 36; background: linear-gradient(135deg, #f4a72a, #ffbf4f); }
+.page-dashboard .pipeline-step.stage-won { --pipe-inset: 48; background: linear-gradient(135deg, #25bb80, #4bd095); }
+.page-dashboard .pipeline-step.stage-lost { --pipe-inset: 60; background: linear-gradient(135deg, #d92d20, #f04438); }
 
 .page-dashboard .pipeline-step span,
 .page-dashboard .pipeline-step strong,
@@ -2755,14 +2758,20 @@ dialog.modal::backdrop {
     color: #fff;
 }
 
+.page-dashboard .pipeline-step span {
+    font-size: 12px;
+}
+
 .page-dashboard .pipeline-step strong {
-    font-size: 22px;
+    font-size: 18px;
+    line-height: 1;
 }
 
 .page-dashboard .pipeline-step small {
     grid-column: 1 / -1;
     margin-top: 0;
     opacity: .9;
+    font-size: 11px;
 }
 
 .dashboard-list-grid {
