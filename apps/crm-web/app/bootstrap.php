@@ -1044,13 +1044,13 @@ function active_users(): array
 
 function interaction_scope_users(): array
 {
-    [$scopeSql, $scopeParams] = visible_user_condition('u');
+    [$scopeSql, $scopeParams] = user_visibility_condition('u');
     return rows_for_scope_users($scopeSql, $scopeParams);
 }
 
 function task_scope_users(): array
 {
-    [$scopeSql, $scopeParams] = visible_user_condition('u');
+    [$scopeSql, $scopeParams] = user_visibility_condition('u');
     return rows_for_scope_users($scopeSql, $scopeParams);
 }
 

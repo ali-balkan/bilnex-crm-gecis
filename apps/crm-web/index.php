@@ -2613,6 +2613,18 @@ if ($page === 'followups') {
     [$taskScopeSql, $taskScopeParams] = task_visibility_condition('t');
     $scopeWhere = ' WHERE 1 = 1' . $taskScopeSql;
     $taskScopeUsers = task_scope_users();
+    $taskRoleOptions = role_options();
+    $taskScopeRoles = [];
+    foreach ($taskScopeUsers as $scopeUser) {
+        $scopeRole = normalize_role($scopeUser['role'] ?? '');
+        if (isset($taskRoleOptions[$scopeRole])) {
+            $taskScopeRoles[$scopeRole] = $taskRoleOptions[$scopeRole];
+        }
+    }
+    $selectedTaskRole = normalize_role($_GET['task_role'] ?? '');
+    if ($selectedTaskRole !== '' && !array_key_exists($selectedTaskRole, $taskScopeRoles)) {
+        $selectedTaskRole = '';
+    }
     $allowedTaskUserIds = array_map(static fn($user) => (int) $user['id'], $taskScopeUsers);
     $selectedTaskUserId = (int) ($_GET['task_user_id'] ?? $currentUserId);
     if (!in_array($selectedTaskUserId, $allowedTaskUserIds, true)) {
@@ -2625,13 +2637,47 @@ if ($page === 'followups') {
             break;
         }
     }
-    $taskUserWhere = ' AND (t.assigned_by = :selected_task_user_id OR t.assigned_to = :selected_task_user_id)';
-    $taskUserParams = [':selected_task_user_id' => $selectedTaskUserId];
-    $openTaskTotal = (int) scalar("SELECT COUNT(*) FROM tasks t {$scopeWhere}{$taskUserWhere} AND t.status = 'Açık'", $taskScopeParams + $taskUserParams);
-    $assignedToSelectedTotal = (int) scalar("SELECT COUNT(*) FROM tasks t {$scopeWhere} AND t.assigned_to = :selected_task_user_id AND t.assigned_by <> :selected_task_user_id AND t.status = 'Açık'", $taskScopeParams + $taskUserParams);
-    $assignedBySelectedTotal = (int) scalar("SELECT COUNT(*) FROM tasks t {$scopeWhere} AND t.assigned_by = :selected_task_user_id AND t.assigned_to <> :selected_task_user_id AND t.status = 'Açık'", $taskScopeParams + $taskUserParams);
-    $overdueTaskParams = $taskScopeParams + $taskUserParams + [':today' => $today];
-    $overdueTaskTotal = (int) scalar("SELECT COUNT(*) FROM tasks t {$scopeWhere}{$taskUserWhere} AND t.status = 'Açık' AND t.due_date IS NOT NULL AND date(t.due_date) < :today", $overdueTaskParams);
+    $taskFilterWhere = '';
+    $taskFilterParams = [];
+    $assignedToFilterWhere = '';
+    $assignedByFilterWhere = '';
+    $taskFilterLabel = $selectedTaskUser['full_name'] ?? 'Seçili kullanıcı';
+    if ($selectedTaskRole !== '') {
+        $rolePlaceholders = [];
+        foreach (role_database_values([$selectedTaskRole]) as $index => $roleValue) {
+            $param = ':task_filter_role_' . $index;
+            $rolePlaceholders[] = $param;
+            $taskFilterParams[$param] = $roleValue;
+        }
+        $roleInSql = implode(', ', $rolePlaceholders);
+        $taskFilterWhere = " AND EXISTS (SELECT 1 FROM users task_filter_user WHERE task_filter_user.id IN (t.assigned_by, t.assigned_to) AND task_filter_user.role IN ({$roleInSql}))";
+        $assignedToFilterWhere = " AND EXISTS (SELECT 1 FROM users task_filter_to WHERE task_filter_to.id = t.assigned_to AND task_filter_to.role IN ({$roleInSql})) AND t.assigned_by <> t.assigned_to";
+        $assignedByFilterWhere = " AND EXISTS (SELECT 1 FROM users task_filter_by WHERE task_filter_by.id = t.assigned_by AND task_filter_by.role IN ({$roleInSql})) AND t.assigned_by <> t.assigned_to";
+        $taskFilterLabel = ($taskRoleOptions[$selectedTaskRole] ?? role_label($selectedTaskRole)) . ' rolü';
+    } else {
+        $taskFilterWhere = ' AND (t.assigned_by = :selected_task_user_id OR t.assigned_to = :selected_task_user_id)';
+        $taskFilterParams = [':selected_task_user_id' => $selectedTaskUserId];
+        $assignedToFilterWhere = ' AND t.assigned_to = :selected_task_user_id AND t.assigned_by <> :selected_task_user_id';
+        $assignedByFilterWhere = ' AND t.assigned_by = :selected_task_user_id AND t.assigned_to <> :selected_task_user_id';
+    }
+    $openTaskTotal = (int) scalar("SELECT COUNT(*) FROM tasks t {$scopeWhere}{$taskFilterWhere} AND t.status = 'Açık'", $taskScopeParams + $taskFilterParams);
+    $assignedToSelectedTotal = (int) scalar("SELECT COUNT(*) FROM tasks t {$scopeWhere}{$assignedToFilterWhere} AND t.status = 'Açık'", $taskScopeParams + $taskFilterParams);
+    $assignedBySelectedTotal = (int) scalar("SELECT COUNT(*) FROM tasks t {$scopeWhere}{$assignedByFilterWhere} AND t.status = 'Açık'", $taskScopeParams + $taskFilterParams);
+    $overdueTaskParams = $taskScopeParams + $taskFilterParams + [':today' => $today];
+    $overdueTaskTotal = (int) scalar("SELECT COUNT(*) FROM tasks t {$scopeWhere}{$taskFilterWhere} AND t.status = 'Açık' AND t.due_date IS NOT NULL AND date(t.due_date) < :today", $overdueTaskParams);
+    $taskFilterHidden = $selectedTaskRole !== '' ? ['task_role' => $selectedTaskRole] : ['task_user_id' => $selectedTaskUserId];
+    $taskFilterQuery = [];
+    foreach (['q', 'status', 'date_filter', 'date_from', 'date_to'] as $filterName) {
+        if (isset($_GET[$filterName]) && $_GET[$filterName] !== '') {
+            $taskFilterQuery[$filterName] = $_GET[$filterName];
+        }
+    }
+    $visibleTaskRoleOptions = [];
+    foreach ($taskRoleOptions as $roleValue => $roleLabel) {
+        if (array_key_exists($roleValue, $taskScopeRoles)) {
+            $visibleTaskRoleOptions[$roleValue] = $roleLabel;
+        }
+    }
 
     ?>
     <section class="task-command panel">
@@ -2641,10 +2687,10 @@ if ($page === 'followups') {
             <p>Takip gir, işi bir personele ata ve atadığın iş üst yetkilide olsa bile sürecini buradan izle.</p>
         </div>
         <div class="task-stats">
-            <a href="<?= e(app_url('followups', ['status' => 'Açık', 'task_user_id' => $selectedTaskUserId])) ?>"><strong><?= e($openTaskTotal) ?></strong><span>Açık iş</span></a>
-            <a href="<?= e(app_url('followups', ['status' => 'Açık', 'task_user_id' => $selectedTaskUserId])) ?>"><strong><?= e($assignedToSelectedTotal) ?></strong><span>Atanan</span></a>
-            <a href="<?= e(app_url('followups', ['status' => 'Açık', 'task_user_id' => $selectedTaskUserId])) ?>"><strong><?= e($assignedBySelectedTotal) ?></strong><span>Atadığı</span></a>
-            <a href="<?= e(app_url('followups', ['date_filter' => 'custom', 'date_to' => $today, 'status' => 'Açık', 'task_user_id' => $selectedTaskUserId])) ?>"><strong><?= e($overdueTaskTotal) ?></strong><span>Geciken</span></a>
+            <a href="<?= e(app_url('followups', ['status' => 'Açık'] + $taskFilterHidden)) ?>"><strong><?= e($openTaskTotal) ?></strong><span>Açık iş</span></a>
+            <a href="<?= e(app_url('followups', ['status' => 'Açık'] + $taskFilterHidden)) ?>"><strong><?= e($assignedToSelectedTotal) ?></strong><span>Atanan</span></a>
+            <a href="<?= e(app_url('followups', ['status' => 'Açık'] + $taskFilterHidden)) ?>"><strong><?= e($assignedBySelectedTotal) ?></strong><span>Atadığı</span></a>
+            <a href="<?= e(app_url('followups', ['date_filter' => 'custom', 'date_to' => $today, 'status' => 'Açık'] + $taskFilterHidden)) ?>"><strong><?= e($overdueTaskTotal) ?></strong><span>Geciken</span></a>
         </div>
     </section>
 
@@ -2704,12 +2750,10 @@ if ($page === 'followups') {
             <div class="section-title compact-title">
                 <h2>Görünürlük</h2>
             </div>
-            <div class="role-flow">
-                <span>Admin</span>
-                <span>Yönetici</span>
-                <span>Bayi Kanal Yöneticisi</span>
-                <span>Bayi Kanal Uzmanı</span>
-                <span>Saha Satış</span>
+            <div class="role-flow" aria-label="Role göre takip filtresi">
+                <?php foreach ($visibleTaskRoleOptions as $roleValue => $roleLabel): ?>
+                    <a class="<?= e($selectedTaskRole === $roleValue ? 'active' : '') ?>" href="<?= e(app_url('followups', $taskFilterQuery + ['task_role' => $roleValue])) ?>"><?= e($roleLabel) ?></a>
+                <?php endforeach; ?>
             </div>
             <p class="muted">Bayi Kanal Uzmanı ve Saha Satış yalnızca kendilerine atanan veya kendilerinin atadığı işleri görür. Üst roller kendi kapsamındaki ekip işlerini de takip eder.</p>
             <?php if (count($taskScopeUsers) > 1): ?>
@@ -2753,8 +2797,8 @@ if ($page === 'followups') {
     <?php endif; ?>
 
     <?php
-        $listWhere = $scopeWhere . $taskUserWhere;
-        $listParams = $taskScopeParams + $taskUserParams;
+        $listWhere = $scopeWhere . $taskFilterWhere;
+        $listParams = $taskScopeParams + $taskFilterParams;
         if (!empty($_GET['q'])) {
             $listWhere .= ' AND (t.title LIKE :q OR t.description LIKE :q OR c.name LIKE :q OR CAST(t.sql_customer_id AS TEXT) LIKE :q OR assigner.full_name LIKE :q OR assignee.full_name LIKE :q)';
             $listParams[':q'] = '%' . $_GET['q'] . '%';
@@ -2766,13 +2810,13 @@ if ($page === 'followups') {
         apply_date_filter($listWhere, $listParams, 't.due_date', $_GET);
         filter_bar('followups', [
             'status' => ['_label' => 'Durum', 'items' => array_combine(task_statuses(), task_statuses())],
-        ], true, ['task_user_id' => $selectedTaskUserId]);
+        ], true, $taskFilterHidden);
         $items = rows("SELECT t.*, c.name company_name, c.account_code company_account_code, assigner.full_name assigned_by_name, assignee.full_name assigned_to_name, assigner.role assigned_by_role, assignee.role assigned_to_role FROM tasks t LEFT JOIN companies c ON c.id = t.company_id LEFT JOIN users assigner ON assigner.id = t.assigned_by LEFT JOIN users assignee ON assignee.id = t.assigned_to {$listWhere} ORDER BY CASE t.status WHEN 'Açık' THEN 0 ELSE 1 END, CASE WHEN t.due_date IS NOT NULL AND date(t.due_date) < :sort_today AND t.status = 'Açık' THEN 0 ELSE 1 END, COALESCE(t.due_date, '9999-12-31'), t.created_at DESC", $listParams + [':sort_today' => $today]);
     ?>
     <section class="panel task-list-panel">
         <div class="section-title">
             <h2>İş listesi</h2>
-            <span class="muted"><?= e($openTaskTotal) ?> açık iş · <?= e($selectedTaskUser['full_name'] ?? 'Seçili kullanıcı') ?></span>
+            <span class="muted"><?= e($openTaskTotal) ?> açık iş · <?= e($taskFilterLabel) ?></span>
         </div>
         <div class="table-wrap task-table-wrap">
             <table class="task-table">
@@ -2792,9 +2836,10 @@ if ($page === 'followups') {
                 <?php
                     $isOpen = $row['status'] === 'Açık';
                     $isOverdue = $isOpen && $row['due_date'] && strtotime((string) $row['due_date']) < strtotime($today);
-                    $isSelfAssigned = (int) $row['assigned_to'] === $selectedTaskUserId && (int) $row['assigned_by'] === $selectedTaskUserId;
-                    $isAssignedToMe = (int) $row['assigned_to'] === $selectedTaskUserId && !$isSelfAssigned;
-                    $isAssignedByMe = (int) $row['assigned_by'] === $selectedTaskUserId && !$isSelfAssigned;
+                    $taskContextUserId = $selectedTaskRole !== '' ? $currentUserId : $selectedTaskUserId;
+                    $isSelfAssigned = (int) $row['assigned_to'] === $taskContextUserId && (int) $row['assigned_by'] === $taskContextUserId;
+                    $isAssignedToMe = (int) $row['assigned_to'] === $taskContextUserId && !$isSelfAssigned;
+                    $isAssignedByMe = (int) $row['assigned_by'] === $taskContextUserId && !$isSelfAssigned;
                     $cardClasses = ['task-row'];
                     if ($isAssignedToMe) {
                         $cardClasses[] = 'assigned-to-me';

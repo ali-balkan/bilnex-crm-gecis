@@ -1878,6 +1878,7 @@ dialog.modal::backdrop {
     margin: 18px 0;
 }
 
+.role-flow a,
 .role-flow span {
     padding: 8px 10px;
     border-radius: 999px;
@@ -1886,6 +1887,18 @@ dialog.modal::backdrop {
     color: var(--primary-dark);
     font-weight: 800;
     font-size: 12px;
+}
+
+.role-flow a:hover {
+    border-color: #a9d8f7;
+    background: #eef8ff;
+    text-decoration: none;
+}
+
+.role-flow a.active {
+    border-color: var(--primary);
+    background: var(--primary);
+    color: #fff;
 }
 
 .legend-list {
