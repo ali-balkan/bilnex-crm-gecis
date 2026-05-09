@@ -74,12 +74,16 @@ function compact_metric_rows(array $rows, string $labelKey, string $valueKey, in
     return $topRows;
 }
 
-function dashboard_card(string $label, $value, string $hint = '', string $tone = '', string $href = ''): void
+function dashboard_card(string $label, $value, string $hint = '', string $tone = '', string $href = '', array $options = []): void
 {
-    $tag = $href !== '' ? 'a' : 'article';
-    $hrefAttr = $href !== '' ? ' href="' . e($href) . '"' : '';
+    $hasTotalToggle = array_key_exists('total_value', $options);
+    $tag = $href !== '' && !$hasTotalToggle ? 'a' : 'article';
+    $hrefAttr = $tag === 'a' && $href !== '' ? ' href="' . e($href) . '"' : '';
     echo '<' . $tag . $hrefAttr . ' class="stat ' . e($tone) . '"><span>' . e($label) . '</span><strong>' . e($value) . '</strong>';
-    if ($hint !== '') {
+    if ($hasTotalToggle) {
+        $totalLabel = trim((string) ($options['total_label'] ?? 'Toplam')) ?: 'Toplam';
+        echo '<small class="stat-hint-row"><span>' . e($hint) . '</span><button class="stat-total-toggle" type="button" data-stat-total-toggle aria-expanded="false">' . e($totalLabel) . '</button><span class="stat-total-value" hidden>' . e($totalLabel . ': ' . $options['total_value']) . '</span></small>';
+    } elseif ($hint !== '') {
         echo '<small>' . e($hint) . '</small>';
     }
     echo '</' . $tag . '>';
@@ -1680,10 +1684,12 @@ if ($page === 'dashboard') {
         $openAmount = (float) scalar('SELECT COALESCE(SUM(o.estimated_amount), 0) FROM opportunities o WHERE o.stage NOT IN ("Kazanıldı", "Kaybedildi") AND date(o.expected_close_date) BETWEEN :month_start AND :month_end' . $dashboardOppScopeSql, $dashboardOppScopeParams + $dashboardMonthParams);
         $conversionWon = (int) scalar('SELECT COUNT(*) FROM opportunities o WHERE o.stage = "Kazanıldı" AND date(o.expected_close_date) BETWEEN :month_start AND :month_end' . $dashboardOppScopeSql, $dashboardOppScopeParams + $dashboardMonthParams);
         if (company_source() === 'sqlserver') {
-            $totalCompanyCount = bilnex_customer_reader()->countActiveCustomersCreatedBetween($monthStart, $monthEnd);
+            $monthlyCompanyCount = bilnex_customer_reader()->countActiveCustomersCreatedBetween($monthStart, $monthEnd);
+            $allCompanyCount = bilnex_customer_reader()->countActiveCustomers();
         } else {
             [$dashboardCompanyScopeSql, $dashboardCompanyScopeParams] = owned_company_condition('c');
-            $totalCompanyCount = scalar('SELECT COUNT(*) FROM companies c WHERE date(c.created_at) BETWEEN :month_start AND :month_end' . $dashboardCompanyScopeSql, $dashboardCompanyScopeParams + $dashboardMonthParams);
+            $monthlyCompanyCount = scalar('SELECT COUNT(*) FROM companies c WHERE date(c.created_at) BETWEEN :month_start AND :month_end' . $dashboardCompanyScopeSql, $dashboardCompanyScopeParams + $dashboardMonthParams);
+            $allCompanyCount = scalar('SELECT COUNT(*) FROM companies c WHERE 1 = 1' . $dashboardCompanyScopeSql, $dashboardCompanyScopeParams);
         }
         [$dashboardTaskScopeSql, $dashboardTaskScopeParams] = task_visibility_condition('t');
         $dashboardOpenTaskCount = scalar("SELECT COUNT(*) FROM tasks t WHERE t.status = 'Açık'{$dashboardTaskScopeSql} AND t.due_date IS NOT NULL AND date(t.due_date) BETWEEN :month_start AND :month_end", $dashboardTaskScopeParams + $dashboardMonthParams);
@@ -1691,7 +1697,7 @@ if ($page === 'dashboard') {
         $openOpportunityCount = scalar('SELECT COUNT(*) FROM opportunities o WHERE o.stage NOT IN ("Kazanıldı", "Kaybedildi") AND date(o.expected_close_date) BETWEEN :month_start AND :month_end' . $dashboardOppScopeSql, $dashboardOppScopeParams + $dashboardMonthParams);
         $cards = [
             ['Görüşmeler', $monthlyInteractionCount, 'Bu ay', 'stat-blue'],
-            ['Toplam Cari', number_format((float) $totalCompanyCount, 0, ',', '.'), 'Bu ay', 'stat-violet'],
+            ['Toplam Cari', number_format((float) $monthlyCompanyCount, 0, ',', '.'), 'Bu ay', 'stat-violet', ['total_value' => number_format((float) $allCompanyCount, 0, ',', '.'), 'total_label' => 'Toplam']],
             ['Açık Görevler', $dashboardOpenTaskCount, 'Bu ay geciken: ' . $dashboardOverdueTaskCount, 'stat-red'],
             ['Açık Fırsatlar', $openOpportunityCount, 'Bu ay tutar: ' . money($openAmount), 'stat-cyan'],
             ['Kazanılan Satış', $conversionWon, 'Bu ay tutar: ' . money($wonAmount), 'stat-green'],
@@ -1704,8 +1710,9 @@ if ($page === 'dashboard') {
             app_url('opportunities', ['stage' => 'Kazanıldı', 'date_filter' => 'month']),
         ];
         echo '<section class="stats-grid">';
-        foreach ($cards as $index => [$label, $value, $hint, $tone]) {
-            dashboard_card($label, $value, $hint, $tone, $cardLinks[$index] ?? '');
+        foreach ($cards as $index => $card) {
+            [$label, $value, $hint, $tone] = $card;
+            dashboard_card($label, $value, $hint, $tone, $cardLinks[$index] ?? '', $card[4] ?? []);
         }
         echo '</section>';
 

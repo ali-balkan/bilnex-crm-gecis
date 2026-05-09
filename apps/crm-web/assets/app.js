@@ -57,6 +57,16 @@
         });
     });
 
+    qsa('[data-stat-total-toggle]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const value = button.parentElement ? qs('.stat-total-value', button.parentElement) : null;
+            if (!value) return;
+            const nextExpanded = button.getAttribute('aria-expanded') !== 'true';
+            button.setAttribute('aria-expanded', nextExpanded ? 'true' : 'false');
+            value.hidden = !nextExpanded;
+        });
+    });
+
     qsa('[data-opportunity-kanban]').forEach((board) => {
         const updateUrl = board.dataset.updateUrl || '';
         const csrfToken = board.dataset.csrfToken || '';
