@@ -577,6 +577,47 @@ function init_db(): void
     if (!in_array('completion_note', $taskColumnNames, true)) {
         $pdo->exec("ALTER TABLE tasks ADD COLUMN completion_note TEXT");
     }
+    $taskColumns = $pdo->query('PRAGMA table_info(tasks)')->fetchAll();
+    foreach ($taskColumns as $taskColumn) {
+        if (($taskColumn['name'] ?? '') === 'company_id' && (int) ($taskColumn['notnull'] ?? 0) === 1) {
+            $pdo->exec('PRAGMA foreign_keys = OFF');
+            $pdo->exec('DROP TABLE IF EXISTS tasks_rebuild');
+            $pdo->exec("
+                CREATE TABLE tasks_rebuild (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    company_id INTEGER,
+                    sql_customer_id INTEGER,
+                    title TEXT NOT NULL,
+                    description TEXT,
+                    assigned_by INTEGER,
+                    assigned_to INTEGER,
+                    due_date TEXT,
+                    status TEXT NOT NULL DEFAULT 'Açık',
+                    completion_note TEXT,
+                    completed_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (assigned_by) REFERENCES users(id) ON DELETE SET NULL,
+                    FOREIGN KEY (assigned_to) REFERENCES users(id) ON DELETE SET NULL
+                )
+            ");
+            $pdo->exec("
+                INSERT INTO tasks_rebuild (
+                    id, company_id, sql_customer_id, title, description, assigned_by, assigned_to,
+                    due_date, status, completion_note, completed_at, created_at, updated_at
+                )
+                SELECT
+                    id, company_id, sql_customer_id, title, description, assigned_by, assigned_to,
+                    due_date, COALESCE(status, 'Açık'), completion_note, completed_at,
+                    COALESCE(created_at, CURRENT_TIMESTAMP), COALESCE(updated_at, CURRENT_TIMESTAMP)
+                FROM tasks
+            ");
+            $pdo->exec('DROP TABLE tasks');
+            $pdo->exec('ALTER TABLE tasks_rebuild RENAME TO tasks');
+            $pdo->exec('PRAGMA foreign_keys = ON');
+            break;
+        }
+    }
 
     $interactionColumns = $pdo->query('PRAGMA table_info(interactions)')->fetchAll();
     $interactionColumnNames = array_map(fn($column) => $column['name'], $interactionColumns);
