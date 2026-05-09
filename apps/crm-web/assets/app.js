@@ -37,10 +37,17 @@
         button.addEventListener('click', () => {
             const table = qs(button.dataset.exportTable);
             if (!table) return;
-            const rows = qsa('tr', table).map((row) => qsa('th,td', row).map((cell) => {
+            const skipIndexes = new Set(qsa('thead th', table).reduce((indexes, cell, index) => {
+                const label = cell.innerText.replace(/\s+/g, ' ').trim().toLocaleLowerCase('tr-TR');
+                if (cell.hasAttribute('data-export-skip') || label.includes('sql')) {
+                    indexes.push(index);
+                }
+                return indexes;
+            }, []));
+            const rows = qsa('tr', table).map((row) => qsa('th,td', row).filter((_, index) => !skipIndexes.has(index)).map((cell) => {
                 const value = cell.innerText.replace(/\s+/g, ' ').trim().replace(/"/g, '""');
                 return `"${value}"`;
-            }).join(';'));
+            }).join(';')).filter(Boolean);
             const blob = new Blob(['\uFEFF' + rows.join('\n')], { type: 'text/csv;charset=utf-8' });
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
