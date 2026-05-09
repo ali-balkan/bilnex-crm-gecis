@@ -2589,58 +2589,204 @@ dialog.modal::backdrop {
     min-height: 100vh;
     display: grid;
     place-items: center;
-    padding: 24px;
+    padding: clamp(18px, 3vw, 34px);
     background:
-        linear-gradient(135deg, rgba(6, 33, 72, .94), rgba(0, 132, 221, .82)),
-        url("brand/bilnex-office.webp") center / cover;
+        linear-gradient(120deg, rgba(6, 33, 72, .95), rgba(0, 92, 154, .9)),
+        url("brand/bilnex-office.webp") center / cover no-repeat;
+    color: var(--text);
 }
 
 .login-shell {
-    width: min(980px, 100%);
+    width: min(1120px, 100%);
+    min-height: min(680px, calc(100vh - 68px));
     display: grid;
-    grid-template-columns: minmax(340px, 420px) minmax(0, 1fr);
-    gap: 18px;
+    grid-template-columns: minmax(0, 1.18fr) minmax(360px, 430px);
     align-items: stretch;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, .18);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, .08);
+    box-shadow: 0 28px 70px rgba(0, 14, 38, .28);
+    backdrop-filter: blur(12px);
+}
+
+.login-hero {
+    position: relative;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    gap: 28px;
+    min-height: 0;
+    padding: clamp(28px, 4vw, 54px);
+    overflow: hidden;
+    background:
+        linear-gradient(180deg, rgba(6, 33, 72, .18), rgba(6, 33, 72, .84)),
+        url("brand/bilnex-platform.webp") center / cover no-repeat;
+    color: #fff;
+}
+
+.login-hero::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+        linear-gradient(90deg, rgba(6, 33, 72, .82), rgba(6, 33, 72, .22) 58%, rgba(0, 132, 221, .18)),
+        repeating-linear-gradient(90deg, rgba(255, 255, 255, .06) 0 1px, transparent 1px 92px);
+    pointer-events: none;
+}
+
+.login-brand-lockup,
+.login-hero-copy,
+.login-metrics {
+    position: relative;
+    z-index: 1;
+}
+
+.login-brand-lockup {
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+    width: fit-content;
+    padding: 10px 14px 10px 10px;
+    border: 1px solid rgba(255, 255, 255, .28);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, .9);
+    color: var(--primary-dark);
+    font-weight: 800;
+}
+
+.login-brand-lockup img {
+    width: 92px;
+    height: 38px;
+    object-fit: contain;
+}
+
+.login-hero-copy {
+    align-self: center;
+    max-width: 590px;
+}
+
+.login-hero-copy > span {
+    display: inline-flex;
+    margin-bottom: 14px;
+    padding: 7px 11px;
+    border: 1px solid rgba(255, 255, 255, .28);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .12);
+    color: rgba(255, 255, 255, .9);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.login-hero-copy h1 {
+    max-width: 12ch;
+    color: #fff;
+    font-size: clamp(36px, 5vw, 58px);
+    line-height: .98;
+}
+
+.login-hero-copy p {
+    max-width: 520px;
+    margin: 20px 0 0;
+    color: rgba(255, 255, 255, .84);
+    font-size: 17px;
+    line-height: 1.6;
+}
+
+.login-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.login-metrics div {
+    min-width: 0;
+    padding: 14px;
+    border: 1px solid rgba(255, 255, 255, .22);
+    border-radius: 10px;
+    background: rgba(3, 22, 48, .38);
+}
+
+.login-metrics strong,
+.login-metrics span {
+    display: block;
+}
+
+.login-metrics strong {
+    color: #fff;
+    font-size: 18px;
+}
+
+.login-metrics span {
+    margin-top: 5px;
+    color: rgba(255, 255, 255, .72);
+    font-size: 12px;
+    line-height: 1.35;
 }
 
 .login-panel {
     background: #fff;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    padding: 28px;
-    box-shadow: var(--shadow);
+    display: grid;
+    align-content: center;
+    gap: 22px;
+    padding: clamp(28px, 4vw, 46px);
 }
 
 .login-logo {
-    width: 96px;
-    height: 96px;
+    width: 86px;
+    height: 58px;
     object-fit: contain;
     object-position: center;
     border-radius: 8px;
     border: 1px solid var(--line);
     background: #fff;
+    padding: 8px;
 }
 
-.login-panel h1 { margin-top: 18px; color: var(--primary-dark); }
-.login-panel p { color: var(--muted); margin: 7px 0 22px; }
+.login-panel-head {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
 
-.login-visual {
+.login-panel-head span {
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.login-panel-head h2 {
+    margin: 4px 0 0;
+    color: var(--primary-dark);
+    font-size: 25px;
+}
+
+.login-panel form {
+    gap: 16px;
+}
+
+.login-panel label {
+    color: var(--primary-dark);
+}
+
+.login-panel input {
+    min-height: 48px;
+    border-color: #c7d5e4;
+    background: #f8fbfe;
+}
+
+.login-panel .btn {
+    min-height: 48px;
+    justify-content: center;
+    font-size: 15px;
+}
+
+.login-footnote {
     margin: 0;
-    min-height: 420px;
-    border: 1px solid rgba(255, 255, 255, .34);
-    border-radius: 8px;
-    background: rgba(255, 255, 255, .92);
-    box-shadow: var(--shadow);
-    display: grid;
-    place-items: center;
-    padding: 26px;
-    overflow: hidden;
-}
-
-.login-visual img {
-    width: 100%;
-    max-height: 320px;
-    object-fit: contain;
+    padding-top: 4px;
+    color: var(--muted);
+    font-size: 12px;
+    text-align: center;
 }
 
 @media (max-width: 1100px) {
@@ -2652,6 +2798,28 @@ dialog.modal::backdrop {
     .page-dashboard .stats-grid,
     .dashboard-list-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .page-dashboard .dashboard-main-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 900px) {
+    .login-page {
+        padding: 16px;
+        place-items: start center;
+    }
+
+    .login-shell {
+        min-height: 0;
+        grid-template-columns: 1fr;
+    }
+
+    .login-hero {
+        min-height: 360px;
+        padding: 26px;
+    }
+
+    .login-hero-copy h1 {
+        max-width: 15ch;
+        font-size: 38px;
+    }
 }
 
 @media (min-width: 1101px) and (max-width: 1320px) {
@@ -2694,7 +2862,33 @@ dialog.modal::backdrop {
     .meta { grid-template-columns: 1fr; }
     h1 { font-size: 23px; }
     .login-shell { grid-template-columns: 1fr; }
-    .login-visual { display: none; }
+    .login-hero {
+        min-height: 300px;
+        padding: 22px;
+    }
+    .login-brand-lockup span {
+        display: none;
+    }
+    .login-brand-lockup img {
+        width: 82px;
+    }
+    .login-hero-copy h1 {
+        max-width: 16ch;
+        font-size: 32px;
+    }
+    .login-hero-copy p {
+        font-size: 14px;
+    }
+    .login-metrics {
+        grid-template-columns: 1fr;
+    }
+    .login-panel {
+        padding: 24px;
+    }
+    .login-panel-head {
+        align-items: flex-start;
+        flex-direction: column;
+    }
 
     .brand {
         align-items: flex-start;

@@ -327,10 +327,30 @@ function render_login(): void
     </head>
     <body class="login-page">
         <main class="login-shell">
+            <section class="login-hero" aria-label="Bilnex CRM">
+                <div class="login-brand-lockup">
+                    <img src="<?= e(rtrim(app_config('base_url'), '/')) ?>/assets/brand/bilnex-logo.svg" alt="Bilnex Yazılım Çözümleri">
+                    <span>Bilnex Yazılım Çözümleri</span>
+                </div>
+                <div class="login-hero-copy">
+                    <span>İş Ortakları CRM</span>
+                    <h1>Bayi kanalını tek merkezden yönetin</h1>
+                    <p>Cariler, görüşmeler, takipler ve satış fırsatları için kurumsal kontrol paneli.</p>
+                </div>
+                <div class="login-metrics" aria-hidden="true">
+                    <div><strong>SQL</strong><span>Canlı cari kaynağı</span></div>
+                    <div><strong>CRM</strong><span>Takip ve fırsat akışı</span></div>
+                    <div><strong>Rapor</strong><span>Anlık kanal görünümü</span></div>
+                </div>
+            </section>
             <section class="login-panel">
-                <img class="login-logo" src="<?= e(rtrim(app_config('base_url'), '/')) ?>/assets/brand/bilnex-logo.svg" alt="Bilnex Yazılım Çözümleri">
-                <h1>İş Ortakları CRM</h1>
-                <p>Bilnex Yazılım Çözümleri bayi takip paneli</p>
+                <div class="login-panel-head">
+                    <img class="login-logo" src="<?= e(rtrim(app_config('base_url'), '/')) ?>/assets/brand/bilnex-logo.svg" alt="Bilnex Yazılım Çözümleri">
+                    <div>
+                        <span>Güvenli giriş</span>
+                        <h2>Hesabınıza giriş yapın</h2>
+                    </div>
+                </div>
                 <?php if ($flash): ?>
                     <div class="alert alert-<?= e($flash['type']) ?>"><?= e($flash['message']) ?></div>
                 <?php endif; ?>
@@ -344,9 +364,7 @@ function render_login(): void
                     </label>
                     <button class="btn primary" type="submit">Giriş yap</button>
                 </form>
-            </section>
-            <section class="login-visual" aria-hidden="true">
-                <img src="<?= e(rtrim(app_config('base_url'), '/')) ?>/assets/brand/bilnex-platform.webp" alt="">
+                <p class="login-footnote">Bilnex İş Ortakları CRM</p>
             </section>
         </main>
     </body>
