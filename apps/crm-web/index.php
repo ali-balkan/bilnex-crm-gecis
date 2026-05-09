@@ -655,10 +655,11 @@ function filter_bar(string $target, array $extra = [], bool $includeDate = true,
         <?php endforeach; ?>
         <input name="q" value="<?= e($_GET['q'] ?? '') ?>" placeholder="Ara...">
         <?php foreach ($extra as $name => $options): ?>
+            <?php $selectedOption = $options['_selected'] ?? ($_GET[$name] ?? ''); ?>
             <select name="<?= e($name) ?>">
                 <option value=""><?= e($options['_label']) ?></option>
                 <?php foreach ($options['items'] as $value => $label): ?>
-                    <option value="<?= e($value) ?>"<?= selected($_GET[$name] ?? '', $value) ?>><?= e($label) ?></option>
+                    <option value="<?= e($value) ?>"<?= selected($selectedOption, $value) ?>><?= e($label) ?></option>
                 <?php endforeach; ?>
             </select>
         <?php endforeach; ?>
@@ -2766,13 +2767,33 @@ if ($page === 'followups') {
             $taskScopeRoles[$scopeRole] = $taskRoleOptions[$scopeRole];
         }
     }
-    $selectedTaskRole = normalize_role($_GET['task_role'] ?? '');
-    if ($selectedTaskRole !== '' && !array_key_exists($selectedTaskRole, $taskScopeRoles)) {
-        $selectedTaskRole = '';
-    }
     $allowedTaskUserIds = array_map(static fn($user) => (int) $user['id'], $taskScopeUsers);
-    $selectedTaskUserId = (int) ($_GET['task_user_id'] ?? $currentUserId);
-    if (!in_array($selectedTaskUserId, $allowedTaskUserIds, true)) {
+    $requestedTaskScope = trim((string) ($_GET['task_scope'] ?? ''));
+    if ($requestedTaskScope === '') {
+        if (!empty($_GET['task_role'])) {
+            $requestedTaskScope = 'role:' . normalize_role($_GET['task_role']);
+        } elseif (!empty($_GET['task_user_id'])) {
+            $requestedTaskScope = 'user:' . (int) $_GET['task_user_id'];
+        }
+    }
+    $selectedTaskScopeType = 'user';
+    $selectedTaskRole = '';
+    $selectedTaskUserId = $currentUserId;
+    if ($requestedTaskScope === 'all' && count($taskScopeUsers) > 1) {
+        $selectedTaskScopeType = 'all';
+    } elseif (str_starts_with($requestedTaskScope, 'role:')) {
+        $candidateRole = normalize_role(substr($requestedTaskScope, 5));
+        if ($candidateRole !== '' && array_key_exists($candidateRole, $taskScopeRoles)) {
+            $selectedTaskScopeType = 'role';
+            $selectedTaskRole = $candidateRole;
+        }
+    } elseif (str_starts_with($requestedTaskScope, 'user:')) {
+        $candidateUserId = (int) substr($requestedTaskScope, 5);
+        if (in_array($candidateUserId, $allowedTaskUserIds, true)) {
+            $selectedTaskUserId = $candidateUserId;
+        }
+    }
+    if ($selectedTaskScopeType === 'user' && !in_array($selectedTaskUserId, $allowedTaskUserIds, true)) {
         $selectedTaskUserId = $currentUserId;
     }
     $selectedTaskUser = null;
@@ -2787,7 +2808,10 @@ if ($page === 'followups') {
     $assignedToFilterWhere = '';
     $assignedByFilterWhere = '';
     $taskFilterLabel = $selectedTaskUser['full_name'] ?? 'Seçili kullanıcı';
-    if ($selectedTaskRole !== '') {
+    if ($selectedTaskScopeType === 'all') {
+        $taskFilterLabel = 'Tüm görünür takipler';
+        $selectedTaskUserId = $currentUserId;
+    } elseif ($selectedTaskScopeType === 'role') {
         $rolePlaceholders = [];
         foreach (role_database_values([$selectedTaskRole]) as $index => $roleValue) {
             $param = ':task_filter_role_' . $index;
@@ -2805,12 +2829,21 @@ if ($page === 'followups') {
         $assignedToFilterWhere = ' AND t.assigned_to = :selected_task_user_id AND t.assigned_by <> :selected_task_user_id';
         $assignedByFilterWhere = ' AND t.assigned_by = :selected_task_user_id AND t.assigned_to <> :selected_task_user_id';
     }
+    if ($assignedToFilterWhere === '') {
+        $assignedToFilterWhere = $taskFilterWhere . ' AND t.assigned_by <> t.assigned_to';
+    }
+    if ($assignedByFilterWhere === '') {
+        $assignedByFilterWhere = $taskFilterWhere . ' AND t.assigned_by <> t.assigned_to';
+    }
     $openTaskTotal = (int) scalar("SELECT COUNT(*) FROM tasks t {$scopeWhere}{$taskFilterWhere} AND t.status = 'Açık'", $taskScopeParams + $taskFilterParams);
     $assignedToSelectedTotal = (int) scalar("SELECT COUNT(*) FROM tasks t {$scopeWhere}{$assignedToFilterWhere} AND t.status = 'Açık'", $taskScopeParams + $taskFilterParams);
     $assignedBySelectedTotal = (int) scalar("SELECT COUNT(*) FROM tasks t {$scopeWhere}{$assignedByFilterWhere} AND t.status = 'Açık'", $taskScopeParams + $taskFilterParams);
     $overdueTaskParams = $taskScopeParams + $taskFilterParams + [':today' => $today];
     $overdueTaskTotal = (int) scalar("SELECT COUNT(*) FROM tasks t {$scopeWhere}{$taskFilterWhere} AND t.status = 'Açık' AND t.due_date IS NOT NULL AND date(t.due_date) < :today", $overdueTaskParams);
-    $taskFilterHidden = $selectedTaskRole !== '' ? ['task_role' => $selectedTaskRole] : ['task_user_id' => $selectedTaskUserId];
+    $selectedTaskScopeValue = $selectedTaskScopeType === 'all'
+        ? 'all'
+        : ($selectedTaskScopeType === 'role' ? 'role:' . $selectedTaskRole : 'user:' . $selectedTaskUserId);
+    $taskFilterHidden = ['task_scope' => $selectedTaskScopeValue];
     $taskFilterQuery = [];
     foreach (['q', 'status', 'date_filter', 'date_from', 'date_to'] as $filterName) {
         if (isset($_GET[$filterName]) && $_GET[$filterName] !== '') {
@@ -2822,6 +2855,20 @@ if ($page === 'followups') {
         if (array_key_exists($roleValue, $taskScopeRoles)) {
             $visibleTaskRoleOptions[$roleValue] = $roleLabel;
         }
+    }
+    $taskScopeFilterOptions = [];
+    if (count($taskScopeUsers) > 1) {
+        $taskScopeFilterOptions['all'] = 'Tüm görünür takipler';
+    }
+    foreach ($visibleTaskRoleOptions as $roleValue => $roleLabel) {
+        $taskScopeFilterOptions['role:' . $roleValue] = 'Rol: ' . $roleLabel;
+    }
+    foreach ($taskScopeUsers as $scopeUser) {
+        $userLabel = $scopeUser['full_name'] . ' - ' . role_label($scopeUser['role']);
+        if ((int) $scopeUser['id'] === $currentUserId) {
+            $userLabel .= ' (ben)';
+        }
+        $taskScopeFilterOptions['user:' . (int) $scopeUser['id']] = 'Kişi: ' . $userLabel;
     }
 
     ?>
@@ -2904,8 +2951,11 @@ if ($page === 'followups') {
                 <h2>Görünürlük</h2>
             </div>
             <div class="role-flow" aria-label="Role göre takip filtresi">
+                <?php if (count($taskScopeUsers) > 1): ?>
+                    <a class="<?= e($selectedTaskScopeType === 'all' ? 'active' : '') ?>" href="<?= e(app_url('followups', $taskFilterQuery + ['task_scope' => 'all'])) ?>">Tümü</a>
+                <?php endif; ?>
                 <?php foreach ($visibleTaskRoleOptions as $roleValue => $roleLabel): ?>
-                    <a class="<?= e($selectedTaskRole === $roleValue ? 'active' : '') ?>" href="<?= e(app_url('followups', $taskFilterQuery + ['task_role' => $roleValue])) ?>"><?= e($roleLabel) ?></a>
+                    <a class="<?= e($selectedTaskScopeType === 'role' && $selectedTaskRole === $roleValue ? 'active' : '') ?>" href="<?= e(app_url('followups', $taskFilterQuery + ['task_scope' => 'role:' . $roleValue])) ?>"><?= e($roleLabel) ?></a>
                 <?php endforeach; ?>
             </div>
             <p class="muted">Bayi Kanal Uzmanı ve Saha Satış yalnızca kendilerine atanan veya kendilerinin atadığı işleri görür. Üst roller kendi kapsamındaki ekip işlerini de takip eder.</p>
@@ -2917,10 +2967,10 @@ if ($page === 'followups') {
                     <input type="hidden" name="date_filter" value="<?= e($_GET['date_filter'] ?? '') ?>">
                     <input type="hidden" name="date_from" value="<?= e($_GET['date_from'] ?? '') ?>">
                     <input type="hidden" name="date_to" value="<?= e($_GET['date_to'] ?? '') ?>">
-                    <label>Kullanıcı takipleri
-                        <select name="task_user_id" onchange="this.form.submit()">
-                            <?php foreach ($taskScopeUsers as $scopeUser): ?>
-                                <option value="<?= e($scopeUser['id']) ?>"<?= selected($selectedTaskUserId, $scopeUser['id']) ?>><?= e($scopeUser['full_name']) ?> - <?= e(role_label($scopeUser['role'])) ?></option>
+                    <label>Görünürlük filtresi
+                        <select name="task_scope" onchange="this.form.submit()">
+                            <?php foreach ($taskScopeFilterOptions as $scopeValue => $scopeLabel): ?>
+                                <option value="<?= e($scopeValue) ?>"<?= selected($selectedTaskScopeValue, $scopeValue) ?>><?= e($scopeLabel) ?></option>
                             <?php endforeach; ?>
                         </select>
                     </label>
@@ -2963,8 +3013,9 @@ if ($page === 'followups') {
         }
         apply_date_filter($listWhere, $listParams, 't.due_date', $_GET);
         filter_bar('followups', [
+            'task_scope' => ['_label' => 'Görünürlük', '_selected' => $selectedTaskScopeValue, 'items' => $taskScopeFilterOptions],
             'status' => ['_label' => 'Durum', 'items' => array_combine(task_statuses(), task_statuses())],
-        ], true, $taskFilterHidden);
+        ], true);
         $items = rows("SELECT t.*, c.name company_name, c.account_code company_account_code, assigner.full_name assigned_by_name, assignee.full_name assigned_to_name, assigner.role assigned_by_role, assignee.role assigned_to_role FROM tasks t LEFT JOIN companies c ON c.id = t.company_id LEFT JOIN users assigner ON assigner.id = t.assigned_by LEFT JOIN users assignee ON assignee.id = t.assigned_to {$listWhere} ORDER BY CASE t.status WHEN 'Açık' THEN 0 ELSE 1 END, CASE WHEN t.due_date IS NOT NULL AND date(t.due_date) < :sort_today AND t.status = 'Açık' THEN 0 ELSE 1 END, COALESCE(t.due_date, '9999-12-31'), t.created_at DESC", $listParams + [':sort_today' => $today]);
     ?>
     <section class="panel task-list-panel">

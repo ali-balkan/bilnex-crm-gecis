@@ -905,6 +905,21 @@ function task_visible_roles_for_current_user(): ?array
     return [];
 }
 
+function task_hierarchy_roles_for_current_user(): ?array
+{
+    $role = normalize_role(current_user()['role'] ?? null);
+    if ($role === ROLE_ADMIN) {
+        return null;
+    }
+    if ($role === ROLE_MANAGER) {
+        return [ROLE_MANAGER, ROLE_CHANNEL_MANAGER, ROLE_CHANNEL_SPECIALIST, ROLE_FIELD_SALES];
+    }
+    if ($role === ROLE_CHANNEL_MANAGER) {
+        return [ROLE_CHANNEL_MANAGER, ROLE_CHANNEL_SPECIALIST, ROLE_FIELD_SALES];
+    }
+    return [];
+}
+
 function role_database_values(array $roles): array
 {
     $values = $roles;
@@ -981,7 +996,7 @@ function interaction_visibility_condition(string $alias = 'i'): array
 
 function task_visibility_condition(string $alias = 't'): array
 {
-    $roles = task_visible_roles_for_current_user();
+    $roles = task_hierarchy_roles_for_current_user();
     if ($roles === null) {
         return ['', []];
     }
@@ -1091,8 +1106,39 @@ function interaction_scope_users(): array
 
 function task_scope_users(): array
 {
-    [$scopeSql, $scopeParams] = user_visibility_condition('u');
+    [$scopeSql, $scopeParams] = task_user_visibility_condition('u');
     return rows_for_scope_users($scopeSql, $scopeParams);
+}
+
+function task_user_visibility_condition(string $alias = 'u'): array
+{
+    $roles = task_hierarchy_roles_for_current_user();
+    if ($roles === null) {
+        return ['', []];
+    }
+
+    $userId = (int) (current_user()['id'] ?? 0);
+    if ($userId <= 0) {
+        return [' AND 1 = 0', []];
+    }
+
+    $prefix = preg_replace('/[^A-Za-z0-9_]/', '', $alias) ?: 'u';
+    $userParam = ':task_user_scope_id_' . $prefix;
+    $params = [$userParam => $userId];
+    $conditions = ["{$alias}.id = {$userParam}"];
+
+    $roleValues = role_database_values($roles);
+    if ($roleValues) {
+        $placeholders = [];
+        foreach ($roleValues as $index => $roleValue) {
+            $param = ':task_user_scope_role_' . $prefix . '_' . $index;
+            $placeholders[] = $param;
+            $params[$param] = $roleValue;
+        }
+        $conditions[] = "{$alias}.role IN (" . implode(', ', $placeholders) . ')';
+    }
+
+    return [' AND (' . implode(' OR ', $conditions) . ')', $params];
 }
 
 function rows_for_scope_users(string $scopeSql, array $scopeParams): array
