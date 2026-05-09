@@ -2790,51 +2790,82 @@ dialog.modal::backdrop {
 }
 
 .page-dashboard .pipeline {
-    grid-template-columns: 1fr;
-    gap: 6px;
-    align-content: start;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    align-content: stretch;
 }
 
 .page-dashboard .pipeline-step {
-    min-height: 34px;
+    position: relative;
+    min-height: 70px;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    padding: 6px 14px;
-    margin-inline: min(calc(var(--pipe-inset, 0) * 1px), 56px);
-    border: 0;
-    border-radius: 9px;
-    background: linear-gradient(135deg, #236ee9, #127cf2);
-    color: #fff;
-    box-shadow: 0 12px 22px rgba(6, 33, 72, .13);
+    gap: 4px 10px;
+    padding: 10px 12px 9px 14px;
+    border: 1px solid var(--stage-line, #dbe8f5);
+    border-radius: 11px;
+    background: linear-gradient(180deg, #fff, var(--stage-bg, #f5faff));
+    color: var(--text);
+    box-shadow: 0 10px 20px rgba(6, 33, 72, .07);
+    overflow: hidden;
 }
 
-.page-dashboard .pipeline-step.stage-new { --pipe-inset: 0; background: linear-gradient(135deg, #236ee9, #127cf2); }
-.page-dashboard .pipeline-step.stage-meeting { --pipe-inset: 12; background: linear-gradient(135deg, #28bad0, #35c7de); }
-.page-dashboard .pipeline-step.stage-offer { --pipe-inset: 24; background: linear-gradient(135deg, #705de4, #8464ef); }
-.page-dashboard .pipeline-step.stage-contract { --pipe-inset: 36; background: linear-gradient(135deg, #f4a72a, #ffbf4f); }
-.page-dashboard .pipeline-step.stage-won { --pipe-inset: 48; background: linear-gradient(135deg, #25bb80, #4bd095); }
-.page-dashboard .pipeline-step.stage-lost { --pipe-inset: 60; background: linear-gradient(135deg, #d92d20, #f04438); }
-
-.page-dashboard .pipeline-step span,
-.page-dashboard .pipeline-step strong,
-.page-dashboard .pipeline-step small {
-    color: #fff;
+.page-dashboard .pipeline-step::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 5px;
+    background: var(--stage-accent, #236ee9);
 }
+
+.page-dashboard .pipeline-step.stage-new { --stage-accent: #236ee9; --stage-line: #cbdcff; --stage-bg: #f5f8ff; }
+.page-dashboard .pipeline-step.stage-meeting { --stage-accent: #22b8cf; --stage-line: #c7eef4; --stage-bg: #f2fcfe; }
+.page-dashboard .pipeline-step.stage-offer { --stage-accent: #7256e8; --stage-line: #ded7ff; --stage-bg: #f8f6ff; }
+.page-dashboard .pipeline-step.stage-contract { --stage-accent: #f4a72a; --stage-line: #ffe2a8; --stage-bg: #fff9ed; }
+.page-dashboard .pipeline-step.stage-won { --stage-accent: #25bb80; --stage-line: #bfeeda; --stage-bg: #f2fff8; }
+.page-dashboard .pipeline-step.stage-lost { --stage-accent: #d92d20; --stage-line: #f8c9c4; --stage-bg: #fff6f5; }
 
 .page-dashboard .pipeline-step span {
+    min-width: 0;
+    color: #16335d;
     font-size: 12px;
+    font-weight: 850;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .page-dashboard .pipeline-step strong {
-    font-size: 18px;
+    display: inline-grid;
+    place-items: center;
+    min-width: 28px;
+    height: 28px;
+    padding-inline: 8px;
+    border-radius: 999px;
+    background: var(--stage-accent, #236ee9);
+    color: #fff;
+    font-size: 17px;
     line-height: 1;
+    box-shadow: 0 8px 14px rgba(6, 33, 72, .12);
+}
+
+.page-dashboard .pipeline-step::after {
+    content: "";
+    grid-column: 1 / -1;
+    order: 4;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--stage-accent, #236ee9);
+    opacity: .16;
 }
 
 .page-dashboard .pipeline-step small {
     grid-column: 1 / -1;
-    margin-top: 0;
-    opacity: .9;
+    order: 3;
+    margin-top: -2px;
+    color: #536a88;
     font-size: 11px;
+    font-weight: 750;
 }
 
 .dashboard-list-grid {
@@ -3261,6 +3292,10 @@ dialog.modal::backdrop {
 
     .page-dashboard .pipeline-step {
         margin-inline: 0;
+    }
+
+    .page-dashboard .pipeline {
+        grid-template-columns: 1fr;
     }
 
     .task-card-main,
