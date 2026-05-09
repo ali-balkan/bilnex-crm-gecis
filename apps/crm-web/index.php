@@ -168,6 +168,30 @@ function render_donut_chart(array $rows, string $labelKey, string $valueKey): vo
     echo '<div class="donut-chart" style="--p1:' . e($first) . ';--p2:' . e($second) . '" data-total="' . e((int) $total) . '"></div>';
 }
 
+function complete_daily_trend(array $rows, string $labelKey, string $valueKey, string $endDate, int $days = 7): array
+{
+    $valuesByDate = [];
+    foreach ($rows as $row) {
+        $date = (string) ($row[$labelKey] ?? '');
+        if ($date !== '') {
+            $valuesByDate[$date] = (int) ($row[$valueKey] ?? 0);
+        }
+    }
+
+    $end = DateTimeImmutable::createFromFormat('!Y-m-d', $endDate) ?: new DateTimeImmutable('today');
+    $start = $end->modify('-' . max(0, $days - 1) . ' days');
+    $series = [];
+    for ($day = $start; $day <= $end; $day = $day->modify('+1 day')) {
+        $date = $day->format('Y-m-d');
+        $series[] = [
+            $labelKey => $date,
+            $valueKey => $valuesByDate[$date] ?? 0,
+        ];
+    }
+
+    return $series;
+}
+
 function render_trend_chart(array $rows, string $labelKey, string $valueKey): void
 {
     $max = 0;
@@ -175,8 +199,36 @@ function render_trend_chart(array $rows, string $labelKey, string $valueKey): vo
         $max = max($max, (float) $row[$valueKey]);
     }
     echo '<div class="trend-line' . (!$rows ? ' empty-chart' : '') . '" style="--points:' . max(1, count($rows)) . '">';
+    $previousValue = null;
     foreach ($rows as $row) {
-        echo '<div class="trend-point" title="' . e($row[$labelKey] . ': ' . $row[$valueKey]) . '"><i style="--value:' . pct($row[$valueKey], $max) . '"></i><span>' . e(substr((string) $row[$labelKey], 5)) . '</span></div>';
+        $value = (float) $row[$valueKey];
+        $displayValue = (int) $value;
+        $changeClass = 'flat';
+        $changeLabel = '%0';
+        if ($previousValue !== null) {
+            if ($previousValue > 0) {
+                $change = (($value - $previousValue) / $previousValue) * 100;
+            } elseif ($value > 0) {
+                $change = 100;
+            } else {
+                $change = 0;
+            }
+            $changeClass = $change > 0 ? 'up' : ($change < 0 ? 'down' : 'flat');
+            $changeLabel = $change > 0
+                ? '+%' . number_format(abs($change), 0, ',', '.')
+                : ($change < 0 ? '-%' . number_format(abs($change), 0, ',', '.') : '%0');
+        }
+        $title = $row[$labelKey] . ': ' . $displayValue . ' görüşme';
+        if ($previousValue !== null) {
+            $title .= ' · Önceki güne göre ' . $changeLabel;
+        }
+        echo '<div class="trend-point" title="' . e($title) . '">';
+        echo '<strong>' . e($displayValue) . '</strong>';
+        echo '<em class="trend-change ' . e($changeClass) . '">' . e($changeLabel) . '</em>';
+        echo '<i style="--value:' . pct($value, $max) . '"></i>';
+        echo '<span>' . e(substr((string) $row[$labelKey], 5)) . '</span>';
+        echo '</div>';
+        $previousValue = $value;
     }
     if (!$rows) {
         echo '<p class="muted">Veri yok</p>';
@@ -1672,7 +1724,12 @@ if ($page === 'dashboard') {
         }
         $dashboardStatusRows = compact_metric_rows($statusRows, 'status', 'total', 6);
         $pipeline = rows('SELECT o.stage, COUNT(*) total, COALESCE(SUM(o.estimated_amount), 0) amount FROM opportunities o WHERE 1 = 1' . $dashboardOppScopeSql . ' GROUP BY o.stage ORDER BY CASE o.stage WHEN "Yeni fırsat" THEN 1 WHEN "Görüşme yapılıyor" THEN 2 WHEN "Teklif verildi" THEN 3 WHEN "Sözleşme bekleniyor" THEN 4 WHEN "Kazanıldı" THEN 5 WHEN "Kaybedildi" THEN 6 ELSE 7 END', $dashboardOppScopeParams);
-        $trend = rows('SELECT date(i.interaction_date) day, COUNT(*) total FROM interactions i WHERE date(i.interaction_date) >= date(:today, "-6 day")' . $dashboardInteractionScopeSql . ' GROUP BY date(i.interaction_date) ORDER BY day', $dashboardInteractionScopeParams + [':today' => $today]);
+        $trend = complete_daily_trend(
+            rows('SELECT date(i.interaction_date) day, COUNT(*) total FROM interactions i WHERE date(i.interaction_date) >= date(:today, "-6 day")' . $dashboardInteractionScopeSql . ' GROUP BY date(i.interaction_date) ORDER BY day', $dashboardInteractionScopeParams + [':today' => $today]),
+            'day',
+            'total',
+            $today
+        );
         $overdueTasks = rows("SELECT t.*, c.name company_name, assigner.full_name assigned_by_name, assignee.full_name assigned_to_name FROM tasks t LEFT JOIN companies c ON c.id = t.company_id LEFT JOIN users assigner ON assigner.id = t.assigned_by LEFT JOIN users assignee ON assignee.id = t.assigned_to WHERE t.status = 'Açık'{$dashboardTaskScopeSql} AND t.due_date IS NOT NULL AND date(t.due_date) < :today ORDER BY t.due_date ASC, t.created_at DESC LIMIT 3", $dashboardTaskScopeParams + [':today' => $today]);
         $openOpps = rows('SELECT o.id, o.product_service, o.estimated_amount, o.stage, o.expected_close_date, c.name company_name, u.full_name salesperson_name FROM opportunities o JOIN companies c ON c.id = o.company_id LEFT JOIN users u ON u.id = o.salesperson_id WHERE o.stage NOT IN ("Kazanıldı", "Kaybedildi")' . $dashboardOppScopeSql . ' ORDER BY o.estimated_amount DESC LIMIT 3', $dashboardOppScopeParams);
 
@@ -1744,7 +1801,12 @@ if ($page === 'dashboard') {
     } else {
         $uid = current_user()['id'];
         $myPipeline = rows('SELECT stage, COUNT(*) total, COALESCE(SUM(estimated_amount), 0) amount FROM opportunities WHERE salesperson_id = :uid GROUP BY stage ORDER BY total DESC', [':uid' => $uid]);
-        $myTrend = rows('SELECT date(interaction_date) day, COUNT(*) total FROM interactions WHERE user_id = :uid AND date(interaction_date) >= date(:today, "-6 day") GROUP BY date(interaction_date) ORDER BY day', [':uid' => $uid, ':today' => $today]);
+        $myTrend = complete_daily_trend(
+            rows('SELECT date(interaction_date) day, COUNT(*) total FROM interactions WHERE user_id = :uid AND date(interaction_date) >= date(:today, "-6 day") GROUP BY date(interaction_date) ORDER BY day', [':uid' => $uid, ':today' => $today]),
+            'day',
+            'total',
+            $today
+        );
         $todayFollowups = rows('SELECT id, name, contact_person, phone, status, next_followup_date FROM companies WHERE (responsible_user_id = :uid OR created_by = :uid) AND date(next_followup_date) = :today ORDER BY name LIMIT 3', [':uid' => $uid, ':today' => $today]);
         $overdueFollowups = rows('SELECT id, name, contact_person, phone, status, next_followup_date FROM companies WHERE (responsible_user_id = :uid OR created_by = :uid) AND next_followup_date IS NOT NULL AND date(next_followup_date) < :today ORDER BY next_followup_date LIMIT 3', [':uid' => $uid, ':today' => $today]);
         $priorityFollowups = $overdueFollowups ?: $todayFollowups;
