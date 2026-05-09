@@ -1617,40 +1617,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 if ($page === 'dashboard') {
     render_header('Dashboard');
     $today = date('Y-m-d');
-    $weekStart = (new DateTimeImmutable('monday this week'))->format('Y-m-d');
     $monthStart = date('Y-m-01');
+    $monthEnd = date('Y-m-t');
+    $dashboardMonthParams = [':month_start' => $monthStart, ':month_end' => $monthEnd];
     if (can_view_all()) {
         [$dashboardOppScopeSql, $dashboardOppScopeParams] = opportunity_visibility_condition('o');
         [$dashboardInteractionScopeSql, $dashboardInteractionScopeParams] = interaction_visibility_condition('i');
-        $weekCount = (int) scalar('SELECT COUNT(*) FROM interactions i WHERE date(i.interaction_date) >= :week' . $dashboardInteractionScopeSql, $dashboardInteractionScopeParams + [':week' => $weekStart]);
-        $wonAmount = (float) scalar('SELECT COALESCE(SUM(o.estimated_amount), 0) FROM opportunities o WHERE o.stage = "Kazanıldı"' . $dashboardOppScopeSql, $dashboardOppScopeParams);
-        $openAmount = (float) scalar('SELECT COALESCE(SUM(o.estimated_amount), 0) FROM opportunities o WHERE o.stage NOT IN ("Kazanıldı", "Kaybedildi")' . $dashboardOppScopeSql, $dashboardOppScopeParams);
-        $conversionWon = (int) scalar('SELECT COUNT(*) FROM opportunities o WHERE o.stage = "Kazanıldı"' . $dashboardOppScopeSql, $dashboardOppScopeParams);
-        $conversionClosed = (int) scalar('SELECT COUNT(*) FROM opportunities o WHERE o.stage IN ("Kazanıldı", "Kaybedildi")' . $dashboardOppScopeSql, $dashboardOppScopeParams);
-        $conversionRate = $conversionClosed > 0 ? round(($conversionWon / $conversionClosed) * 100) . '%' : '0%';
+        $monthlyInteractionCount = (int) scalar('SELECT COUNT(*) FROM interactions i WHERE date(i.interaction_date) BETWEEN :month_start AND :month_end' . $dashboardInteractionScopeSql, $dashboardInteractionScopeParams + $dashboardMonthParams);
+        $wonAmount = (float) scalar('SELECT COALESCE(SUM(o.estimated_amount), 0) FROM opportunities o WHERE o.stage = "Kazanıldı" AND date(o.expected_close_date) BETWEEN :month_start AND :month_end' . $dashboardOppScopeSql, $dashboardOppScopeParams + $dashboardMonthParams);
+        $openAmount = (float) scalar('SELECT COALESCE(SUM(o.estimated_amount), 0) FROM opportunities o WHERE o.stage NOT IN ("Kazanıldı", "Kaybedildi") AND date(o.expected_close_date) BETWEEN :month_start AND :month_end' . $dashboardOppScopeSql, $dashboardOppScopeParams + $dashboardMonthParams);
+        $conversionWon = (int) scalar('SELECT COUNT(*) FROM opportunities o WHERE o.stage = "Kazanıldı" AND date(o.expected_close_date) BETWEEN :month_start AND :month_end' . $dashboardOppScopeSql, $dashboardOppScopeParams + $dashboardMonthParams);
         if (company_source() === 'sqlserver') {
-            $totalCompanyCount = bilnex_customer_reader()->countActiveCustomers();
+            $totalCompanyCount = bilnex_customer_reader()->countActiveCustomersCreatedBetween($monthStart, $monthEnd);
         } else {
             [$dashboardCompanyScopeSql, $dashboardCompanyScopeParams] = owned_company_condition('c');
-            $totalCompanyCount = scalar('SELECT COUNT(*) FROM companies c WHERE 1 = 1' . $dashboardCompanyScopeSql, $dashboardCompanyScopeParams);
+            $totalCompanyCount = scalar('SELECT COUNT(*) FROM companies c WHERE date(c.created_at) BETWEEN :month_start AND :month_end' . $dashboardCompanyScopeSql, $dashboardCompanyScopeParams + $dashboardMonthParams);
         }
         [$dashboardTaskScopeSql, $dashboardTaskScopeParams] = task_visibility_condition('t');
-        $dashboardOpenTaskCount = scalar("SELECT COUNT(*) FROM tasks t WHERE t.status = 'Açık'{$dashboardTaskScopeSql}", $dashboardTaskScopeParams);
-        $dashboardOverdueTaskCount = scalar("SELECT COUNT(*) FROM tasks t WHERE t.status = 'Açık'{$dashboardTaskScopeSql} AND t.due_date IS NOT NULL AND date(t.due_date) < :today", $dashboardTaskScopeParams + [':today' => $today]);
-        $openOpportunityCount = scalar('SELECT COUNT(*) FROM opportunities o WHERE o.stage NOT IN ("Kazanıldı", "Kaybedildi")' . $dashboardOppScopeSql, $dashboardOppScopeParams);
+        $dashboardOpenTaskCount = scalar("SELECT COUNT(*) FROM tasks t WHERE t.status = 'Açık'{$dashboardTaskScopeSql} AND t.due_date IS NOT NULL AND date(t.due_date) BETWEEN :month_start AND :month_end", $dashboardTaskScopeParams + $dashboardMonthParams);
+        $dashboardOverdueTaskCount = scalar("SELECT COUNT(*) FROM tasks t WHERE t.status = 'Açık'{$dashboardTaskScopeSql} AND t.due_date IS NOT NULL AND date(t.due_date) BETWEEN :month_start AND :month_end AND date(t.due_date) < :today", $dashboardTaskScopeParams + $dashboardMonthParams + [':today' => $today]);
+        $openOpportunityCount = scalar('SELECT COUNT(*) FROM opportunities o WHERE o.stage NOT IN ("Kazanıldı", "Kaybedildi") AND date(o.expected_close_date) BETWEEN :month_start AND :month_end' . $dashboardOppScopeSql, $dashboardOppScopeParams + $dashboardMonthParams);
         $cards = [
-            ['Bugünkü Görüşmeler', scalar('SELECT COUNT(*) FROM interactions i WHERE date(i.interaction_date) = :today' . $dashboardInteractionScopeSql, $dashboardInteractionScopeParams + [':today' => $today]), 'Bu hafta: ' . $weekCount, 'stat-blue'],
-            ['Toplam Cari', number_format((float) $totalCompanyCount, 0, ',', '.'), company_source() === 'sqlserver' ? 'SQL Customer kaynağı' : 'Tüm kayıtlar', 'stat-violet'],
-            ['Açık Görevler', $dashboardOpenTaskCount, 'Geciken: ' . $dashboardOverdueTaskCount, 'stat-red'],
-            ['Açık Fırsatlar', $openOpportunityCount, 'Toplam tutar: ' . money($openAmount), 'stat-cyan'],
-            ['Kazanılan Satış', $conversionWon, 'Toplam tutar: ' . money($wonAmount), 'stat-green'],
+            ['Görüşmeler', $monthlyInteractionCount, 'Bu ay', 'stat-blue'],
+            ['Toplam Cari', number_format((float) $totalCompanyCount, 0, ',', '.'), 'Bu ay', 'stat-violet'],
+            ['Açık Görevler', $dashboardOpenTaskCount, 'Bu ay geciken: ' . $dashboardOverdueTaskCount, 'stat-red'],
+            ['Açık Fırsatlar', $openOpportunityCount, 'Bu ay tutar: ' . money($openAmount), 'stat-cyan'],
+            ['Kazanılan Satış', $conversionWon, 'Bu ay tutar: ' . money($wonAmount), 'stat-green'],
         ];
         $cardLinks = [
-            app_url('interactions', ['date_filter' => 'today']),
+            app_url('interactions', ['date_filter' => 'month']),
             app_url('companies'),
-            app_url('followups', ['status' => 'Açık']),
-            app_url('opportunities', ['stage_group' => 'open']),
-            app_url('opportunities', ['stage' => 'Kazanıldı']),
+            app_url('followups', ['status' => 'Açık', 'date_filter' => 'month']),
+            app_url('opportunities', ['stage_group' => 'open', 'date_filter' => 'month']),
+            app_url('opportunities', ['stage' => 'Kazanıldı', 'date_filter' => 'month']),
         ];
         echo '<section class="stats-grid">';
         foreach ($cards as $index => [$label, $value, $hint, $tone]) {

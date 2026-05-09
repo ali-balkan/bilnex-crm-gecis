@@ -124,6 +124,33 @@ final class CustomerReadRepository
         return (int) ($row['total'] ?? 0);
     }
 
+    public function countActiveCustomersCreatedBetween(string $from, string $to, ?int $customerTypeId = null): int
+    {
+        $customerTypeId = $customerTypeId !== null ? max(1, $customerTypeId) : null;
+        $typeWhere = $customerTypeId !== null ? " AND c.CustomerTypeId = {$customerTypeId}" : '';
+        $params = [];
+        $dateWhere = '';
+        $from = trim($from);
+        $to = trim($to);
+        if ($from !== '') {
+            $dateWhere .= ' AND c.CreatedDate >= :date_from';
+            $params[':date_from'] = $from;
+        }
+        if ($to !== '') {
+            $toDate = DateTimeImmutable::createFromFormat('!Y-m-d', $to) ?: new DateTimeImmutable($to);
+            $dateWhere .= ' AND c.CreatedDate < :date_to_exclusive';
+            $params[':date_to_exclusive'] = $toDate->modify('+1 day')->format('Y-m-d');
+        }
+
+        $row = $this->safeFetchOne("
+            SELECT COUNT(*) AS total
+            FROM dbo.Customer c
+            WHERE ISNULL(c.isDeleted, 0) = 0{$typeWhere}{$dateWhere}
+        ", $params);
+
+        return (int) ($row['total'] ?? 0);
+    }
+
     public function countActiveCustomersByType(): array
     {
         return $this->safeFetchAll("
