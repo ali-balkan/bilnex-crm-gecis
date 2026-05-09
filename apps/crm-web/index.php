@@ -2778,7 +2778,6 @@ if ($page === 'followups') {
             <table class="task-table">
                 <thead>
                     <tr>
-                        <th>Tip</th>
                         <th>İş</th>
                         <th>Cari</th>
                         <th>Atayan</th>
@@ -2813,8 +2812,8 @@ if ($page === 'followups') {
                     $companyDisplay = $row['company_name'] ?: '-';
                 ?>
                 <tr class="<?= e(implode(' ', $cardClasses)) ?>">
-                    <td><span class="task-context"><?= e($contextLabel) ?></span></td>
                     <td class="task-title-cell">
+                        <span class="task-context"><?= e($contextLabel) ?></span>
                         <strong><?= e($row['title']) ?></strong>
                         <?php if ($row['description']): ?><small><?= e($row['description']) ?></small><?php endif; ?>
                     </td>

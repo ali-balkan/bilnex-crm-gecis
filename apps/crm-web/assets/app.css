@@ -1923,7 +1923,7 @@ dialog.modal::backdrop {
 }
 
 .task-table {
-    min-width: 1120px;
+    min-width: 980px;
     table-layout: fixed;
 }
 
@@ -1934,16 +1934,16 @@ dialog.modal::backdrop {
     background: #fff;
 }
 
-.task-table th:nth-child(1) { width: 120px; }
-.task-table th:nth-child(2) { width: 260px; }
-.task-table th:nth-child(3) { width: 220px; }
+.task-table th:nth-child(1) { width: 310px; }
+.task-table th:nth-child(2) { width: 210px; }
+.task-table th:nth-child(3),
 .task-table th:nth-child(4),
-.task-table th:nth-child(5) { width: 150px; }
-.task-table th:nth-child(6) { width: 130px; }
-.task-table th:nth-child(7) { width: 105px; }
-.task-table th:nth-child(8) { width: 300px; }
+.task-table th:nth-child(5) { width: 135px; }
+.task-table th:nth-child(6) { width: 95px; }
+.task-table th:nth-child(7) { width: 250px; }
 
 .task-table td {
+    padding-block: 9px;
     vertical-align: middle;
 }
 
@@ -1974,6 +1974,7 @@ dialog.modal::backdrop {
 
 .task-title-cell strong,
 .task-table td {
+    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
@@ -2005,7 +2006,12 @@ dialog.modal::backdrop {
 }
 
 .task-actions-cell .task-complete-form input {
-    width: 150px;
+    width: 132px;
+    min-height: 32px;
+}
+
+.task-actions-cell .btn {
+    min-height: 32px;
 }
 
 .task-list {
