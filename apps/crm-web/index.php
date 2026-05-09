@@ -3378,15 +3378,19 @@ if ($page === 'opportunities') {
     $kanbanViewParams['view'] = 'kanban';
     $listViewParams['view'] = 'list';
     ?>
-    <div class="toolbar">
-        <a class="btn primary" href="<?= e(app_url('opportunity_form')) ?>">Yeni satış fırsatı</a>
+    <div class="toolbar opportunities-toolbar">
+        <div class="toolbar-start">
+            <a class="btn primary" href="<?= e(app_url('opportunity_form')) ?>">Yeni satış fırsatı</a>
+        </div>
         <div class="view-switch" aria-label="Görünüm seçimi">
             <a class="<?= e($viewMode === 'kanban' ? 'active' : '') ?>" href="<?= e(app_url('opportunities', $kanbanViewParams)) ?>">Kanban</a>
             <a class="<?= e($viewMode === 'list' ? 'active' : '') ?>" href="<?= e(app_url('opportunities', $listViewParams)) ?>">Liste</a>
         </div>
-        <?php if ($viewMode === 'list'): ?>
-            <button class="btn" type="button" data-export-table="#opportunities-table" data-filename="satis-firsatlari.csv">CSV indir</button>
-        <?php endif; ?>
+        <div class="toolbar-end">
+            <?php if ($viewMode === 'list'): ?>
+                <button class="btn" type="button" data-export-table="#opportunities-table" data-filename="satis-firsatlari.csv">CSV indir</button>
+            <?php endif; ?>
+        </div>
     </div>
     <?php if ($viewMode === 'kanban'): ?>
         <section class="panel">

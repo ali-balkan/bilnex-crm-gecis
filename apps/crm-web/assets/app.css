@@ -1331,6 +1331,31 @@ input[list] {
     margin-bottom: 14px;
 }
 
+.opportunities-toolbar {
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) auto minmax(180px, 1fr);
+    align-items: center;
+}
+
+.toolbar-start,
+.toolbar-end {
+    display: flex;
+    align-items: center;
+}
+
+.toolbar-start {
+    justify-content: flex-start;
+}
+
+.toolbar-end {
+    justify-content: flex-end;
+    min-height: 40px;
+}
+
+.opportunities-toolbar .view-switch {
+    justify-self: center;
+}
+
 .view-switch {
     display: inline-flex;
     gap: 2px;
@@ -3418,7 +3443,7 @@ dialog.modal::backdrop {
     .topbar, .detail-head, .actions, .section-title, .report-hero, .field-hero, .profile-session, .interaction-card-main { align-items: stretch; flex-direction: column; }
     .report-actions, .quick-actions, .period-tabs { justify-content: stretch; }
     .report-actions .btn, .quick-actions .btn, .period-tabs a { width: 100%; }
-    .stats-grid, .grid-two, .form-grid, .filters, .company-search-panel, .company-search-panel.has-clear, .company-search-panel-local, .company-search-panel-local.has-clear, .import-panel, .dashboard-grid, .pipeline, .field-focus-grid, .analytics-split, .task-command, .task-stats, .task-meta, .sql-customer-picker, .sql-search-row, .field-action-row, .dashboard-list-grid, .interaction-hero, .interaction-hero-stats, .interaction-layout, .interaction-filters, .interaction-meta, .page-dashboard .stats-grid { grid-template-columns: 1fr; }
+    .stats-grid, .grid-two, .form-grid, .filters, .company-search-panel, .company-search-panel.has-clear, .company-search-panel-local, .company-search-panel-local.has-clear, .import-panel, .dashboard-grid, .pipeline, .field-focus-grid, .analytics-split, .task-command, .task-stats, .task-meta, .sql-customer-picker, .sql-search-row, .field-action-row, .dashboard-list-grid, .interaction-hero, .interaction-hero-stats, .interaction-layout, .interaction-filters, .interaction-meta, .opportunities-toolbar, .page-dashboard .stats-grid { grid-template-columns: 1fr; }
     .wide-panel { grid-column: auto; }
     .meta { grid-template-columns: 1fr; }
     h1 { font-size: 23px; }
@@ -3505,10 +3530,22 @@ dialog.modal::backdrop {
     .actions .btn,
     .section-title .btn,
     .import-panel .btn,
+    .opportunities-toolbar .btn,
     .company-search-panel .btn,
     .filters .btn,
     .filters button {
         width: 100%;
+    }
+
+    .toolbar-start,
+    .toolbar-end,
+    .opportunities-toolbar .view-switch {
+        justify-content: stretch;
+        justify-self: stretch;
+    }
+
+    .opportunities-toolbar .view-switch a {
+        flex: 1 1 0;
     }
 
     .filters {
