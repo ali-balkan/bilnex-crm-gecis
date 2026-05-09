@@ -2694,6 +2694,14 @@ if ($page === 'followups') {
         </div>
     </section>
 
+    <details class="task-entry-toggle"<?= $editTask ? ' open' : '' ?>>
+        <summary>
+            <span>
+                <strong><?= $editTask ? 'İşi düzenle' : 'Takip gir / iş ata' ?></strong>
+                <small><?= $editTask ? 'Seçili takip kaydını güncelleyin.' : 'Yeni takip veya iş ataması ekleyin.' ?></small>
+            </span>
+            <span class="summary-action"><?= $editTask ? 'Açık' : 'Aç' ?></span>
+        </summary>
     <section class="grid-two task-workspace">
         <form class="panel form-grid task-create-panel" method="post" action="<?= e(app_url('save_task')) ?>">
             <div class="wide section-title compact-title">
@@ -2780,6 +2788,7 @@ if ($page === 'followups') {
             </div>
         </article>
     </section>
+    </details>
     <?php if ($usingSqlCustomerPicker): ?>
         <dialog class="modal sql-customer-dialog" id="sql-customer-dialog" data-search-url="<?= e(app_url('sql_customer_search')) ?>">
             <div class="modal-head">

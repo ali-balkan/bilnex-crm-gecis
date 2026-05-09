@@ -1862,6 +1862,60 @@ dialog.modal::backdrop {
     align-items: stretch;
 }
 
+.task-entry-toggle {
+    margin-bottom: 16px;
+}
+
+.task-entry-toggle summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    min-height: 56px;
+    padding: 14px 18px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: var(--shadow);
+    color: var(--text);
+    cursor: pointer;
+    list-style: none;
+}
+
+.task-entry-toggle summary::-webkit-details-marker {
+    display: none;
+}
+
+.task-entry-toggle summary:hover {
+    border-color: #a9d8f7;
+    background: #f8fcff;
+}
+
+.task-entry-toggle summary strong,
+.task-entry-toggle summary small {
+    display: block;
+}
+
+.task-entry-toggle summary small {
+    margin-top: 3px;
+    color: var(--muted);
+}
+
+.task-entry-toggle[open] summary {
+    margin-bottom: 14px;
+}
+
+.summary-action {
+    flex: 0 0 auto;
+    min-width: 42px;
+    padding: 7px 12px;
+    border-radius: 8px;
+    background: var(--primary);
+    color: #fff;
+    font-weight: 800;
+    text-align: center;
+}
+
 .task-create-panel,
 .task-rules-panel {
     height: 100%;
