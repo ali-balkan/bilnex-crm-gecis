@@ -1658,7 +1658,7 @@ if ($page === 'dashboard') {
         }
         echo '</section>';
 
-        $dashboardTasks = rows("SELECT t.*, assigner.full_name assigned_by_name, assignee.full_name assigned_to_name FROM tasks t LEFT JOIN users assigner ON assigner.id = t.assigned_by LEFT JOIN users assignee ON assignee.id = t.assigned_to WHERE t.status = 'Açık'{$dashboardTaskScopeSql} ORDER BY COALESCE(t.due_date, '9999-12-31'), t.created_at DESC LIMIT 10", $dashboardTaskScopeParams);
+        $dashboardTasks = rows("SELECT t.*, assigner.full_name assigned_by_name, assignee.full_name assigned_to_name FROM tasks t LEFT JOIN users assigner ON assigner.id = t.assigned_by LEFT JOIN users assignee ON assignee.id = t.assigned_to WHERE t.status = 'Açık'{$dashboardTaskScopeSql} ORDER BY COALESCE(t.due_date, '9999-12-31'), t.created_at DESC LIMIT 3", $dashboardTaskScopeParams);
 
         if (company_source() === 'sqlserver') {
             $statusRows = array_map(static function (array $row): array {
@@ -1674,8 +1674,8 @@ if ($page === 'dashboard') {
         $dashboardStatusRows = compact_metric_rows($statusRows, 'status', 'total', 6);
         $pipeline = rows('SELECT o.stage, COUNT(*) total, COALESCE(SUM(o.estimated_amount), 0) amount FROM opportunities o WHERE 1 = 1' . $dashboardOppScopeSql . ' GROUP BY o.stage ORDER BY CASE o.stage WHEN "Yeni fırsat" THEN 1 WHEN "Görüşme yapılıyor" THEN 2 WHEN "Teklif verildi" THEN 3 WHEN "Sözleşme bekleniyor" THEN 4 WHEN "Kazanıldı" THEN 5 WHEN "Kaybedildi" THEN 6 ELSE 7 END', $dashboardOppScopeParams);
         $trend = rows('SELECT date(i.interaction_date) day, COUNT(*) total FROM interactions i WHERE date(i.interaction_date) >= date(:today, "-6 day")' . $dashboardInteractionScopeSql . ' GROUP BY date(i.interaction_date) ORDER BY day', $dashboardInteractionScopeParams + [':today' => $today]);
-        $overdueTasks = rows("SELECT t.*, c.name company_name, assigner.full_name assigned_by_name, assignee.full_name assigned_to_name FROM tasks t LEFT JOIN companies c ON c.id = t.company_id LEFT JOIN users assigner ON assigner.id = t.assigned_by LEFT JOIN users assignee ON assignee.id = t.assigned_to WHERE t.status = 'Açık'{$dashboardTaskScopeSql} AND t.due_date IS NOT NULL AND date(t.due_date) < :today ORDER BY t.due_date ASC, t.created_at DESC LIMIT 8", $dashboardTaskScopeParams + [':today' => $today]);
-        $openOpps = rows('SELECT o.id, o.product_service, o.estimated_amount, o.stage, o.expected_close_date, c.name company_name, u.full_name salesperson_name FROM opportunities o JOIN companies c ON c.id = o.company_id LEFT JOIN users u ON u.id = o.salesperson_id WHERE o.stage NOT IN ("Kazanıldı", "Kaybedildi")' . $dashboardOppScopeSql . ' ORDER BY o.estimated_amount DESC LIMIT 8', $dashboardOppScopeParams);
+        $overdueTasks = rows("SELECT t.*, c.name company_name, assigner.full_name assigned_by_name, assignee.full_name assigned_to_name FROM tasks t LEFT JOIN companies c ON c.id = t.company_id LEFT JOIN users assigner ON assigner.id = t.assigned_by LEFT JOIN users assignee ON assignee.id = t.assigned_to WHERE t.status = 'Açık'{$dashboardTaskScopeSql} AND t.due_date IS NOT NULL AND date(t.due_date) < :today ORDER BY t.due_date ASC, t.created_at DESC LIMIT 3", $dashboardTaskScopeParams + [':today' => $today]);
+        $openOpps = rows('SELECT o.id, o.product_service, o.estimated_amount, o.stage, o.expected_close_date, c.name company_name, u.full_name salesperson_name FROM opportunities o JOIN companies c ON c.id = o.company_id LEFT JOIN users u ON u.id = o.salesperson_id WHERE o.stage NOT IN ("Kazanıldı", "Kaybedildi")' . $dashboardOppScopeSql . ' ORDER BY o.estimated_amount DESC LIMIT 3', $dashboardOppScopeParams);
 
         echo '<section class="dashboard-grid dashboard-main-grid">';
         echo '<article class="panel chart-panel"><div class="section-title"><h2>Görüşme Trendi</h2><a class="btn small" href="' . e(app_url('interactions', ['date_filter' => 'week'])) . '">Son 7 gün</a></div>';
@@ -1709,7 +1709,7 @@ if ($page === 'dashboard') {
 
         echo '<section class="dashboard-list-grid">';
         echo '<article class="panel dashboard-list-card"><div class="section-title"><h2>Yaklaşan Görevler</h2><a class="btn small" href="' . e(app_url('followups')) . '">Tüm Görevler</a></div><div class="mini-card-list">';
-        foreach (array_slice($dashboardTasks, 0, 4) as $task) {
+        foreach ($dashboardTasks as $task) {
             echo '<a class="mini-card" href="' . e(app_url('followups')) . '"><strong>' . e($task['title']) . '</strong><span>Atayan: ' . e($task['assigned_by_name'] ?: '-') . ' · Atanan: ' . e($task['assigned_to_name'] ?: '-') . '</span><small>Termin: ' . e($task['due_date'] ?: '-') . '</small></a>';
         }
         if (!$dashboardTasks) {
@@ -1728,7 +1728,7 @@ if ($page === 'dashboard') {
         echo '</div></article>';
 
         echo '<article class="panel dashboard-list-card"><div class="section-title"><h2>Açık Fırsatlar</h2><a class="btn small" href="' . e(app_url('opportunities')) . '">Tüm Fırsatlar</a></div><div class="mini-card-list">';
-        foreach (array_slice($openOpps, 0, 4) as $row) {
+        foreach ($openOpps as $row) {
             echo '<a class="mini-card" href="' . e(app_url('opportunity_form', ['id' => $row['id']])) . '"><strong>' . e($row['company_name']) . '</strong><span>' . e($row['product_service']) . ' · ' . e($row['stage']) . '</span><small>' . e(money($row['estimated_amount'])) . '</small></a>';
         }
         if (!$openOpps) {
@@ -1746,10 +1746,10 @@ if ($page === 'dashboard') {
         $uid = current_user()['id'];
         $myPipeline = rows('SELECT stage, COUNT(*) total, COALESCE(SUM(estimated_amount), 0) amount FROM opportunities WHERE salesperson_id = :uid GROUP BY stage ORDER BY total DESC', [':uid' => $uid]);
         $myTrend = rows('SELECT date(interaction_date) day, COUNT(*) total FROM interactions WHERE user_id = :uid AND date(interaction_date) >= date(:today, "-6 day") GROUP BY date(interaction_date) ORDER BY day', [':uid' => $uid, ':today' => $today]);
-        $todayFollowups = rows('SELECT id, name, contact_person, phone, status, next_followup_date FROM companies WHERE (responsible_user_id = :uid OR created_by = :uid) AND date(next_followup_date) = :today ORDER BY name LIMIT 6', [':uid' => $uid, ':today' => $today]);
-        $overdueFollowups = rows('SELECT id, name, contact_person, phone, status, next_followup_date FROM companies WHERE (responsible_user_id = :uid OR created_by = :uid) AND next_followup_date IS NOT NULL AND date(next_followup_date) < :today ORDER BY next_followup_date LIMIT 6', [':uid' => $uid, ':today' => $today]);
+        $todayFollowups = rows('SELECT id, name, contact_person, phone, status, next_followup_date FROM companies WHERE (responsible_user_id = :uid OR created_by = :uid) AND date(next_followup_date) = :today ORDER BY name LIMIT 3', [':uid' => $uid, ':today' => $today]);
+        $overdueFollowups = rows('SELECT id, name, contact_person, phone, status, next_followup_date FROM companies WHERE (responsible_user_id = :uid OR created_by = :uid) AND next_followup_date IS NOT NULL AND date(next_followup_date) < :today ORDER BY next_followup_date LIMIT 3', [':uid' => $uid, ':today' => $today]);
         $priorityFollowups = $overdueFollowups ?: $todayFollowups;
-        $myOpenOpps = rows('SELECT o.id, o.company_id, o.product_service, o.estimated_amount, o.stage, o.expected_close_date, c.name company_name FROM opportunities o JOIN companies c ON c.id = o.company_id WHERE o.salesperson_id = :uid AND o.stage NOT IN ("Kazanıldı", "Kaybedildi") ORDER BY COALESCE(o.expected_close_date, "9999-12-31"), o.estimated_amount DESC LIMIT 6', [':uid' => $uid]);
+        $myOpenOpps = rows('SELECT o.id, o.company_id, o.product_service, o.estimated_amount, o.stage, o.expected_close_date, c.name company_name FROM opportunities o JOIN companies c ON c.id = o.company_id WHERE o.salesperson_id = :uid AND o.stage NOT IN ("Kazanıldı", "Kaybedildi") ORDER BY COALESCE(o.expected_close_date, "9999-12-31"), o.estimated_amount DESC LIMIT 3', [':uid' => $uid]);
         $lastInteraction = scalar('SELECT MAX(interaction_date) FROM interactions WHERE user_id = :uid', [':uid' => $uid]);
         $cards = [
             ['Bana atanan işler', scalar("SELECT COUNT(*) FROM tasks WHERE assigned_to = :uid AND status = 'Açık'", [':uid' => $uid])],
@@ -1765,8 +1765,8 @@ if ($page === 'dashboard') {
         echo '<a class="btn" href="' . e(app_url('followups')) . '">İş listesi</a>';
         echo '<a class="btn" href="' . e(app_url('opportunity_form')) . '">Yeni fırsat</a>';
         echo '</div></section>';
-        $assignedToMe = rows("SELECT t.*, u.full_name assigned_by_name FROM tasks t LEFT JOIN users u ON u.id = t.assigned_by WHERE t.assigned_to = :uid AND t.status = 'Açık' ORDER BY COALESCE(t.due_date, '9999-12-31'), t.created_at DESC LIMIT 6", [':uid' => $uid]);
-        $assignedByMe = rows("SELECT t.*, u.full_name assigned_to_name FROM tasks t LEFT JOIN users u ON u.id = t.assigned_to WHERE t.assigned_by = :uid AND t.status = 'Açık' ORDER BY COALESCE(t.due_date, '9999-12-31'), t.created_at DESC LIMIT 6", [':uid' => $uid]);
+        $assignedToMe = rows("SELECT t.*, u.full_name assigned_by_name FROM tasks t LEFT JOIN users u ON u.id = t.assigned_by WHERE t.assigned_to = :uid AND t.status = 'Açık' ORDER BY COALESCE(t.due_date, '9999-12-31'), t.created_at DESC LIMIT 3", [':uid' => $uid]);
+        $assignedByMe = rows("SELECT t.*, u.full_name assigned_to_name FROM tasks t LEFT JOIN users u ON u.id = t.assigned_to WHERE t.assigned_by = :uid AND t.status = 'Açık' ORDER BY COALESCE(t.due_date, '9999-12-31'), t.created_at DESC LIMIT 3", [':uid' => $uid]);
         echo '<section class="grid-two">';
         echo '<article class="panel focus-card"><div class="section-title"><h2>Bana atanan işler</h2><a class="btn small" href="' . e(app_url('followups')) . '">Aç</a></div><div class="mini-card-list">';
         foreach ($assignedToMe as $task) {
@@ -1819,7 +1819,7 @@ if ($page === 'dashboard') {
         render_bar_list($myTrend, 'day', 'total');
         echo '</article>';
         echo '</section>';
-        $recent = rows('SELECT id, name, status, next_followup_date FROM companies WHERE responsible_user_id = :uid OR created_by = :uid ORDER BY created_at DESC LIMIT 8', [':uid' => $uid]);
+        $recent = rows('SELECT id, name, status, next_followup_date FROM companies WHERE responsible_user_id = :uid OR created_by = :uid ORDER BY created_at DESC LIMIT 3', [':uid' => $uid]);
         echo '<section class="panel"><h2>Son eklediğim cariler</h2><div class="table-wrap"><table><thead><tr><th>Cari</th><th>Durum</th><th>Takip</th></tr></thead><tbody>';
         foreach ($recent as $row) {
             echo '<tr><td><a href="' . e(app_url('company_view', ['id' => $row['id']])) . '">' . e($row['name']) . '</a></td><td>' . e($row['status']) . '</td><td>' . e($row['next_followup_date']) . '</td></tr>';

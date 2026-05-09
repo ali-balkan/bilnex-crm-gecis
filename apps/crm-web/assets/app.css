@@ -2782,11 +2782,30 @@ dialog.modal::backdrop {
 
 .dashboard-list-card {
     min-height: 246px;
+    align-self: start;
 }
 
 .page-dashboard .mini-card {
     border-color: #e5edf7;
     background: #f9fbfe;
+}
+
+.page-dashboard .dashboard-list-card .mini-card {
+    gap: 4px;
+    padding: 10px 12px;
+}
+
+.page-dashboard .dashboard-list-card .mini-card strong {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
+.page-dashboard .dashboard-list-card .mini-card span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .reminder-list {
