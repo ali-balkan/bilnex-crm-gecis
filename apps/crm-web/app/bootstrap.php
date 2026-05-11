@@ -527,9 +527,41 @@ function init_db(): void
             FOREIGN KEY (assigned_to) REFERENCES users(id) ON DELETE SET NULL
         );
 
+        CREATE TABLE IF NOT EXISTS goals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            description TEXT,
+            assigned_by INTEGER,
+            assigned_to INTEGER NOT NULL,
+            recurrence_type TEXT NOT NULL,
+            start_date TEXT NOT NULL,
+            end_date TEXT,
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (assigned_by) REFERENCES users(id) ON DELETE SET NULL,
+            FOREIGN KEY (assigned_to) REFERENCES users(id) ON DELETE RESTRICT
+        );
+
+        CREATE TABLE IF NOT EXISTS goal_occurrences (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            goal_id INTEGER NOT NULL,
+            period_key TEXT NOT NULL,
+            due_date TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'bekliyor',
+            completion_note TEXT,
+            completed_at TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (goal_id) REFERENCES goals(id) ON DELETE CASCADE,
+            UNIQUE(goal_id, period_key)
+        );
+
         CREATE INDEX IF NOT EXISTS idx_interactions_user_date ON interactions(user_id, interaction_date);
         CREATE INDEX IF NOT EXISTS idx_interactions_company_date ON interactions(company_id, interaction_date);
         CREATE INDEX IF NOT EXISTS idx_interactions_result_date ON interactions(result, interaction_date);
+        CREATE INDEX IF NOT EXISTS idx_goals_assignee_active ON goals(assigned_to, active);
+        CREATE INDEX IF NOT EXISTS idx_goal_occurrences_due_status ON goal_occurrences(due_date, status);
     ");
 
     $userColumns = $pdo->query('PRAGMA table_info(users)')->fetchAll();
@@ -1093,6 +1125,286 @@ function can_complete_task(array $task): bool
     return $userId > 0 && (int) ($task['assigned_to'] ?? 0) === $userId;
 }
 
+function goal_recurrence_options(): array
+{
+    return [
+        'daily' => 'Günlük',
+        'weekly' => 'Haftalık',
+        'monthly' => 'Aylık',
+    ];
+}
+
+function goal_occurrence_statuses(): array
+{
+    return [
+        'bekliyor' => 'Bekliyor',
+        'tamamlandi' => 'Tamamlandı',
+        'gecikti' => 'Gecikti',
+    ];
+}
+
+function goal_assignable_roles_for_current_user(): ?array
+{
+    $role = normalize_role(current_user()['role'] ?? null);
+    if ($role === ROLE_ADMIN) {
+        return null;
+    }
+    if ($role === ROLE_MANAGER) {
+        return [ROLE_CHANNEL_MANAGER, ROLE_CHANNEL_SPECIALIST, ROLE_FIELD_SALES];
+    }
+    if ($role === ROLE_CHANNEL_MANAGER) {
+        return [ROLE_CHANNEL_SPECIALIST, ROLE_FIELD_SALES];
+    }
+    return [];
+}
+
+function goal_assignable_users(): array
+{
+    $userId = (int) (current_user()['id'] ?? 0);
+    if ($userId <= 0) {
+        return [];
+    }
+
+    $roles = goal_assignable_roles_for_current_user();
+    if ($roles === null) {
+        return db()->query('SELECT id, full_name, username, role FROM users WHERE active = 1 ORDER BY full_name')->fetchAll();
+    }
+
+    $params = [':goal_assign_self' => $userId];
+    $conditions = ['id = :goal_assign_self'];
+    $roleValues = role_database_values($roles);
+    if ($roleValues) {
+        $placeholders = [];
+        foreach ($roleValues as $index => $roleValue) {
+            $param = ':goal_assign_role_' . $index;
+            $placeholders[] = $param;
+            $params[$param] = $roleValue;
+        }
+        $conditions[] = 'role IN (' . implode(', ', $placeholders) . ')';
+    }
+
+    $stmt = db()->prepare('SELECT id, full_name, username, role FROM users WHERE active = 1 AND (' . implode(' OR ', $conditions) . ') ORDER BY CASE WHEN id = :goal_assign_self THEN 0 ELSE 1 END, full_name');
+    $stmt->execute($params);
+    return $stmt->fetchAll();
+}
+
+function can_assign_goal_to(int $userId): bool
+{
+    if ($userId <= 0) {
+        return false;
+    }
+    foreach (goal_assignable_users() as $user) {
+        if ((int) $user['id'] === $userId) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function goal_visibility_condition(string $alias = 'g'): array
+{
+    $roles = goal_assignable_roles_for_current_user();
+    if ($roles === null) {
+        return ['', []];
+    }
+
+    $userId = (int) (current_user()['id'] ?? 0);
+    if ($userId <= 0) {
+        return [' AND 1 = 0', []];
+    }
+
+    $prefix = preg_replace('/[^A-Za-z0-9_]/', '', $alias) ?: 'g';
+    $assignedByParam = ':goal_scope_assigned_by_' . $prefix;
+    $assignedToParam = ':goal_scope_assigned_to_' . $prefix;
+    $params = [
+        $assignedByParam => $userId,
+        $assignedToParam => $userId,
+    ];
+    $conditions = [
+        "{$alias}.assigned_by = {$assignedByParam}",
+        "{$alias}.assigned_to = {$assignedToParam}",
+    ];
+
+    $roleValues = role_database_values($roles);
+    if ($roleValues) {
+        $placeholders = [];
+        foreach ($roleValues as $index => $roleValue) {
+            $param = ':goal_scope_role_' . $prefix . '_' . $index;
+            $placeholders[] = $param;
+            $params[$param] = $roleValue;
+        }
+        $conditions[] = "EXISTS (SELECT 1 FROM users goal_scope_user WHERE goal_scope_user.id = {$alias}.assigned_to AND goal_scope_user.role IN (" . implode(', ', $placeholders) . '))';
+    }
+
+    return [' AND (' . implode(' OR ', $conditions) . ')', $params];
+}
+
+function user_can_access_goal(int $goalId): bool
+{
+    if ($goalId <= 0) {
+        return false;
+    }
+
+    [$scopeSql, $scopeParams] = goal_visibility_condition('g');
+    $stmt = db()->prepare("SELECT COUNT(*) FROM goals g WHERE g.id = :id{$scopeSql}");
+    $stmt->execute($scopeParams + [':id' => $goalId]);
+    return (int) $stmt->fetchColumn() > 0;
+}
+
+function can_manage_goal(array $goal): bool
+{
+    $userId = (int) (current_user()['id'] ?? 0);
+    if ($userId <= 0) {
+        return false;
+    }
+
+    $role = normalize_role(current_user()['role'] ?? null);
+    if ($role === ROLE_ADMIN) {
+        return true;
+    }
+
+    if ((int) ($goal['assigned_by'] ?? 0) === $userId) {
+        return true;
+    }
+
+    if (in_array($role, [ROLE_MANAGER, ROLE_CHANNEL_MANAGER], true)) {
+        $assignedTo = (int) ($goal['assigned_to'] ?? 0);
+        return $assignedTo > 0 && $assignedTo !== $userId && can_assign_goal_to($assignedTo);
+    }
+
+    return false;
+}
+
+function user_can_complete_goal_occurrence(array $occurrence): bool
+{
+    $userId = (int) (current_user()['id'] ?? 0);
+    return $userId > 0 && (int) ($occurrence['assigned_to'] ?? 0) === $userId;
+}
+
+function goal_date_from_string(?string $value): ?DateTimeImmutable
+{
+    $value = trim((string) $value);
+    if ($value === '') {
+        return null;
+    }
+    $date = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+    return $date instanceof DateTimeImmutable && $date->format('Y-m-d') === $value ? $date : null;
+}
+
+function goal_period_key(string $recurrenceType, DateTimeImmutable $date): string
+{
+    return match ($recurrenceType) {
+        'daily' => $date->format('Y-m-d'),
+        'weekly' => $date->format('o-\WW'),
+        'monthly' => $date->format('Y-m'),
+        default => $date->format('Y-m-d'),
+    };
+}
+
+function monthly_goal_due_date(DateTimeImmutable $startDate, int $offset): DateTimeImmutable
+{
+    $month = $startDate->modify('first day of this month')->modify('+' . $offset . ' months');
+    $day = min((int) $startDate->format('j'), (int) $month->format('t'));
+    return $month->setDate((int) $month->format('Y'), (int) $month->format('m'), $day);
+}
+
+function goal_due_dates_until(array $goal, DateTimeImmutable $limitDate): array
+{
+    $startDate = goal_date_from_string($goal['start_date'] ?? null);
+    if (!$startDate || $startDate > $limitDate) {
+        return [];
+    }
+
+    $endDate = goal_date_from_string($goal['end_date'] ?? null);
+    if ($endDate && $endDate < $startDate) {
+        return [];
+    }
+    if ($endDate && $endDate < $limitDate) {
+        $limitDate = $endDate;
+    }
+
+    $recurrenceType = (string) ($goal['recurrence_type'] ?? '');
+    $dates = [];
+    $maxIterations = 5000;
+    for ($offset = 0; $offset < $maxIterations; $offset++) {
+        if ($recurrenceType === 'daily') {
+            $dueDate = $startDate->modify('+' . $offset . ' days');
+        } elseif ($recurrenceType === 'weekly') {
+            $dueDate = $startDate->modify('+' . $offset . ' weeks');
+        } elseif ($recurrenceType === 'monthly') {
+            $dueDate = monthly_goal_due_date($startDate, $offset);
+        } else {
+            return [];
+        }
+
+        if ($dueDate > $limitDate) {
+            break;
+        }
+        $dates[] = $dueDate;
+    }
+
+    return $dates;
+}
+
+function sync_goal_occurrences_for_goal(array $goal, ?string $today = null): void
+{
+    if ((int) ($goal['active'] ?? 0) !== 1) {
+        return;
+    }
+
+    $todayDate = goal_date_from_string($today) ?? new DateTimeImmutable(date('Y-m-d'));
+    $insert = db()->prepare("
+        INSERT OR IGNORE INTO goal_occurrences (goal_id, period_key, due_date, status)
+        VALUES (:goal_id, :period_key, :due_date, :status)
+    ");
+
+    foreach (goal_due_dates_until($goal, $todayDate) as $dueDate) {
+        $insert->execute([
+            ':goal_id' => (int) $goal['id'],
+            ':period_key' => goal_period_key((string) $goal['recurrence_type'], $dueDate),
+            ':due_date' => $dueDate->format('Y-m-d'),
+            ':status' => $dueDate < $todayDate ? 'gecikti' : 'bekliyor',
+        ]);
+    }
+}
+
+function refresh_goal_occurrences(int $goalId, ?string $today = null): void
+{
+    if ($goalId <= 0) {
+        return;
+    }
+    db()->prepare("DELETE FROM goal_occurrences WHERE goal_id = :goal_id AND status <> 'tamamlandi'")->execute([':goal_id' => $goalId]);
+    $stmt = db()->prepare('SELECT * FROM goals WHERE id = :id');
+    $stmt->execute([':id' => $goalId]);
+    $goal = $stmt->fetch();
+    if ($goal) {
+        sync_goal_occurrences_for_goal($goal, $today);
+    }
+    update_goal_occurrence_overdue_statuses($today);
+}
+
+function update_goal_occurrence_overdue_statuses(?string $today = null): void
+{
+    $todayDate = (goal_date_from_string($today) ?? new DateTimeImmutable(date('Y-m-d')))->format('Y-m-d');
+    db()->prepare("UPDATE goal_occurrences SET status = 'gecikti', updated_at = CURRENT_TIMESTAMP WHERE status = 'bekliyor' AND date(due_date) < :today")->execute([':today' => $todayDate]);
+}
+
+function sync_goal_occurrences(?string $today = null): void
+{
+    $todayDate = (goal_date_from_string($today) ?? new DateTimeImmutable(date('Y-m-d')))->format('Y-m-d');
+    $stmt = db()->prepare("
+        SELECT *
+        FROM goals
+        WHERE active = 1
+          AND date(start_date) <= :today
+    ");
+    $stmt->execute([':today' => $todayDate]);
+    foreach ($stmt->fetchAll() as $goal) {
+        sync_goal_occurrences_for_goal($goal, $todayDate);
+    }
+    update_goal_occurrence_overdue_statuses($todayDate);
+}
+
 function active_users(): array
 {
     return db()->query('SELECT id, full_name, username, role FROM users WHERE active = 1 ORDER BY full_name')->fetchAll();
@@ -1250,3 +1562,4 @@ function require_company_access(int $companyId): void
 }
 
 init_db();
+sync_goal_occurrences();

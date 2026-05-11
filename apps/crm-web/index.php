@@ -436,6 +436,7 @@ function nav_icon(string $target): string
         'companies' => '<path d="M4 21V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v16H4Zm4-12h2V7H8v2Zm0 4h2v-2H8v2Zm0 4h2v-2H8v2Zm4-8h2V7h-2v2Zm0 4h2v-2h-2v2Zm0 4h2v-2h-2v2Zm7 4v-9h1a2 2 0 0 1 2 2v7h-3Z"/>',
         'interactions' => '<path d="M4 5a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3h-4.7L7 20v-5a3 3 0 0 1-3-3V5Zm4 2v2h8V7H8Zm0 4h5V9H8v2Z"/>',
         'followups' => '<path d="M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm3 4H6v2h2V8Zm2 0v2h8V8h-8Zm-2 5H6v2h2v-2Zm2 0v2h8v-2h-8Z"/>',
+        'recurring_tasks' => '<path d="M12 2a10 10 0 1 0 10 10h-2a8 8 0 1 1-8-8V2Zm0 4a6 6 0 1 0 6 6h-2a4 4 0 1 1-4-4V6Zm0 4a2 2 0 1 0 2 2h-2v-2Z"/>',
         'opportunities' => '<path d="M4 4h16v4H4V4Zm0 6h10v4H4v-4Zm0 6h16v4H4v-4Zm12-6h4v4h-4v-4Z"/>',
         'reports' => '<path d="M4 19h16v2H4v-2Zm2-2V9h3v8H6Zm5 0V3h3v14h-3Zm5 0v-6h3v6h-3Z"/>',
     ];
@@ -547,6 +548,9 @@ function render_header(string $title): void
     $user = current_user();
     $flash = flash();
     $currentPage = preg_replace('/[^a-z0-9_-]/i', '', $_GET['page'] ?? 'dashboard') ?: 'dashboard';
+    if ($currentPage === 'goals') {
+        $currentPage = 'recurring_tasks';
+    }
     [$openTaskScopeSql, $openTaskScopeParams] = task_visibility_condition('t');
     $openTaskCount = (int) scalar("SELECT COUNT(*) FROM tasks t WHERE t.status = 'Açık'{$openTaskScopeSql}", $openTaskScopeParams);
     $nav = [
@@ -554,6 +558,7 @@ function render_header(string $title): void
         ['companies', 'Cariler'],
         ['interactions', 'Görüşme Ekle'],
         ['followups', 'Takip Listesi'],
+        ['recurring_tasks', 'Düzenli Görev Atama'],
         ['opportunities', 'Satış Fırsatları'],
         ['reports', 'Raporlar'],
     ];
@@ -1256,6 +1261,128 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($page === 'delete_task') {
         flash('Takip listesi kayıtları silinmez. Gerekirse işi düzenleyin veya Tamamlandı durumuna alın.', 'danger');
         redirect_to('followups');
+    }
+
+    if (in_array($page, ['save_recurring_task', 'save_goal'], true)) {
+        $goalId = (int) ($_POST['id'] ?? 0);
+        $existingGoal = null;
+        if ($goalId > 0) {
+            $existingGoal = rows('SELECT * FROM goals WHERE id = :id', [':id' => $goalId])[0] ?? null;
+            if (!$existingGoal) {
+                http_response_code(404);
+                exit('Düzenli görev atama kaydı bulunamadı.');
+            }
+            if (!can_manage_goal($existingGoal)) {
+                http_response_code(403);
+                exit('Bu düzenli görev atamasını güncelleme yetkiniz yok.');
+            }
+        }
+
+        $title = trim($_POST['title'] ?? '');
+        $assignedTo = (int) ($_POST['assigned_to'] ?? 0);
+        $recurrenceType = (string) ($_POST['recurrence_type'] ?? '');
+        $startDate = goal_date_from_string($_POST['start_date'] ?? null);
+        $endDate = goal_date_from_string($_POST['end_date'] ?? null);
+        $endDateValue = trim((string) ($_POST['end_date'] ?? ''));
+
+        if ($title === '') {
+            flash('Başlık zorunludur.', 'danger');
+            redirect_to('recurring_tasks', $goalId > 0 ? ['edit_recurring_task' => $goalId] : []);
+        }
+        if ($assignedTo <= 0 || !can_assign_goal_to($assignedTo)) {
+            http_response_code(403);
+            exit('Bu kullanıcıya düzenli görev atama yetkiniz yok.');
+        }
+        if (!array_key_exists($recurrenceType, goal_recurrence_options())) {
+            flash('Tekrar türü yalnızca günlük, haftalık veya aylık olabilir.', 'danger');
+            redirect_to('recurring_tasks', $goalId > 0 ? ['edit_recurring_task' => $goalId] : []);
+        }
+        if (!$startDate) {
+            flash('Başlangıç tarihi geçerli olmalıdır.', 'danger');
+            redirect_to('recurring_tasks', $goalId > 0 ? ['edit_recurring_task' => $goalId] : []);
+        }
+        if ($endDateValue !== '' && (!$endDate || $endDate < $startDate)) {
+            flash('Bitiş tarihi boş bırakılmalı veya başlangıç tarihinden sonra olmalıdır.', 'danger');
+            redirect_to('recurring_tasks', $goalId > 0 ? ['edit_recurring_task' => $goalId] : []);
+        }
+
+        $data = [
+            ':title' => $title,
+            ':description' => trim($_POST['description'] ?? ''),
+            ':assigned_to' => $assignedTo,
+            ':recurrence_type' => $recurrenceType,
+            ':start_date' => $startDate->format('Y-m-d'),
+            ':end_date' => $endDate ? $endDate->format('Y-m-d') : null,
+            ':active' => isset($_POST['active']) ? 1 : 0,
+        ];
+
+        if ($goalId > 0) {
+            $data[':id'] = $goalId;
+            db()->prepare('UPDATE goals SET title = :title, description = :description, assigned_to = :assigned_to, recurrence_type = :recurrence_type, start_date = :start_date, end_date = :end_date, active = :active, updated_at = CURRENT_TIMESTAMP WHERE id = :id')->execute($data);
+            refresh_goal_occurrences($goalId);
+            flash('Düzenli görev atama güncellendi.');
+        } else {
+            $data[':assigned_by'] = (int) current_user()['id'];
+            db()->prepare('INSERT INTO goals (title, description, assigned_by, assigned_to, recurrence_type, start_date, end_date, active) VALUES (:title, :description, :assigned_by, :assigned_to, :recurrence_type, :start_date, :end_date, :active)')->execute($data);
+            refresh_goal_occurrences((int) db()->lastInsertId());
+            flash('Düzenli görev atama oluşturuldu.');
+        }
+        redirect_to('recurring_tasks');
+    }
+
+    if (in_array($page, ['toggle_recurring_task', 'toggle_goal'], true)) {
+        $goalId = (int) ($_POST['id'] ?? 0);
+        $goal = rows('SELECT * FROM goals WHERE id = :id', [':id' => $goalId])[0] ?? null;
+        if (!$goal) {
+            http_response_code(404);
+            exit('Düzenli görev atama kaydı bulunamadı.');
+        }
+        if (!can_manage_goal($goal)) {
+            http_response_code(403);
+            exit('Bu düzenli görev atamasını pasifleştirme yetkiniz yok.');
+        }
+        $active = (int) ($_POST['active'] ?? 0) === 1 ? 1 : 0;
+        db()->prepare('UPDATE goals SET active = :active, updated_at = CURRENT_TIMESTAMP WHERE id = :id')->execute([
+            ':active' => $active,
+            ':id' => $goalId,
+        ]);
+        flash($active ? 'Düzenli görev atama aktifleştirildi.' : 'Düzenli görev atama pasifleştirildi.');
+        redirect_to('recurring_tasks');
+    }
+
+    if (in_array($page, ['delete_recurring_task', 'delete_goal'], true)) {
+        $goalId = (int) ($_POST['id'] ?? 0);
+        $goal = rows('SELECT * FROM goals WHERE id = :id', [':id' => $goalId])[0] ?? null;
+        if (!$goal) {
+            http_response_code(404);
+            exit('Düzenli görev atama kaydı bulunamadı.');
+        }
+        if (!can_manage_goal($goal)) {
+            http_response_code(403);
+            exit('Bu düzenli görev atamasını silme veya pasifleştirme yetkiniz yok.');
+        }
+        db()->prepare('UPDATE goals SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = :id')->execute([':id' => $goalId]);
+        flash('Düzenli görev atama kayıtları silinmez; kayıt pasifleştirildi.');
+        redirect_to('recurring_tasks');
+    }
+
+    if (in_array($page, ['complete_recurring_task_occurrence', 'complete_goal_occurrence'], true)) {
+        $occurrenceId = (int) ($_POST['id'] ?? 0);
+        $occurrence = rows('SELECT go.*, g.assigned_to FROM goal_occurrences go JOIN goals g ON g.id = go.goal_id WHERE go.id = :id', [':id' => $occurrenceId])[0] ?? null;
+        if (!$occurrence) {
+            http_response_code(404);
+            exit('Düzenli görev kaydı bulunamadı.');
+        }
+        if (!user_can_complete_goal_occurrence($occurrence)) {
+            http_response_code(403);
+            exit('Bu düzenli görevi tamamlama yetkiniz yok.');
+        }
+        db()->prepare("UPDATE goal_occurrences SET status = 'tamamlandi', completion_note = :completion_note, completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = :id")->execute([
+            ':completion_note' => trim($_POST['completion_note'] ?? ''),
+            ':id' => $occurrenceId,
+        ]);
+        flash('Düzenli görev tamamlandı.');
+        redirect_to('recurring_tasks');
     }
 
     if ($page === 'save_user') {
@@ -2722,6 +2849,220 @@ if ($page === 'task_form') {
             </div>
         </dialog>
     <?php endif; ?>
+    <?php
+    render_footer();
+    exit;
+}
+
+if (in_array($page, ['recurring_tasks', 'goals'], true)) {
+    sync_goal_occurrences();
+    render_header('Düzenli Görev Atama');
+    $today = date('Y-m-d');
+    $currentUserId = (int) current_user()['id'];
+    $assignableUsers = goal_assignable_users();
+    $recurrenceOptions = goal_recurrence_options();
+    $occurrenceStatuses = goal_occurrence_statuses();
+    $editGoalId = (int) ($_GET['edit_recurring_task'] ?? ($_GET['edit_goal'] ?? 0));
+    $editGoal = null;
+    if ($editGoalId > 0) {
+        $editGoal = rows('SELECT * FROM goals WHERE id = :id', [':id' => $editGoalId])[0] ?? null;
+        if (!$editGoal) {
+            http_response_code(404);
+            exit('Düzenli görev atama kaydı bulunamadı.');
+        }
+        if (!can_manage_goal($editGoal)) {
+            http_response_code(403);
+            exit('Bu düzenli görev atamasını düzenleme yetkiniz yok.');
+        }
+    }
+
+    [$goalScopeSql, $goalScopeParams] = goal_visibility_condition('g');
+    $goalStatsParams = $goalScopeParams;
+    $pendingGoals = (int) scalar("SELECT COUNT(*) FROM goal_occurrences go JOIN goals g ON g.id = go.goal_id WHERE go.status = 'bekliyor'{$goalScopeSql}", $goalStatsParams);
+    $lateGoals = (int) scalar("SELECT COUNT(*) FROM goal_occurrences go JOIN goals g ON g.id = go.goal_id WHERE go.status = 'gecikti'{$goalScopeSql}", $goalStatsParams);
+    $completedGoals = (int) scalar("SELECT COUNT(*) FROM goal_occurrences go JOIN goals g ON g.id = go.goal_id WHERE go.status = 'tamamlandi' AND date(go.completed_at) BETWEEN :month_start AND :month_end{$goalScopeSql}", $goalStatsParams + [
+        ':month_start' => date('Y-m-01'),
+        ':month_end' => date('Y-m-t'),
+    ]);
+    $activeGoalCount = (int) scalar("SELECT COUNT(*) FROM goals g WHERE g.active = 1{$goalScopeSql}", $goalScopeParams);
+    ?>
+    <section class="task-command panel">
+        <div>
+            <span class="eyebrow">Düzenli görev atama</span>
+            <h2>Tekrarlayan görevleri hiyerarşiye göre takip et</h2>
+            <p>Günlük, haftalık ve aylık görevleri yetki kapsamındaki kişilere ata; her periyot için tek görev oluşur.</p>
+        </div>
+        <div class="task-stats">
+            <a href="<?= e(app_url('recurring_tasks', ['recurring_task_status' => 'bekliyor'])) ?>"><strong><?= e($pendingGoals) ?></strong><span>Bekliyor</span></a>
+            <a href="<?= e(app_url('recurring_tasks', ['recurring_task_status' => 'gecikti'])) ?>"><strong><?= e($lateGoals) ?></strong><span>Gecikti</span></a>
+            <a href="<?= e(app_url('recurring_tasks', ['recurring_task_status' => 'tamamlandi', 'date_filter' => 'month'])) ?>"><strong><?= e($completedGoals) ?></strong><span>Bu ay tamamlanan</span></a>
+            <a href="<?= e(app_url('recurring_tasks', ['active' => '1'])) ?>"><strong><?= e($activeGoalCount) ?></strong><span>Aktif tanım</span></a>
+        </div>
+    </section>
+
+    <details class="task-entry-toggle"<?= $editGoal ? ' open' : '' ?>>
+        <summary>
+            <span>
+                <strong><?= $editGoal ? 'Düzenli görev atamasını düzenle' : 'Düzenli görev atama ekle' ?></strong>
+                <small><?= $editGoal ? 'Tekrar, tarih ve atanan kişiyi güncelleyin.' : 'Günlük, haftalık veya aylık görev tanımı oluşturun.' ?></small>
+            </span>
+            <span class="summary-action"><?= $editGoal ? 'Açık' : 'Aç' ?></span>
+        </summary>
+        <form class="panel form-grid task-create-panel" method="post" action="<?= e(app_url('save_recurring_task')) ?>">
+            <?= csrf_field() ?>
+            <input type="hidden" name="id" value="<?= e($editGoal['id'] ?? 0) ?>">
+            <label>Başlık <input name="title" value="<?= e($editGoal['title'] ?? '') ?>" required placeholder="Örn. Günlük bayi raporu"></label>
+            <label>Atanacak kişi
+                <select name="assigned_to" required>
+                    <?php foreach ($assignableUsers as $user): ?>
+                        <option value="<?= e($user['id']) ?>"<?= selected($editGoal['assigned_to'] ?? $currentUserId, $user['id']) ?>><?= e($user['full_name']) ?> · <?= e(role_label($user['role'])) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label>Tekrar türü
+                <select name="recurrence_type" required>
+                    <?php foreach ($recurrenceOptions as $value => $label): ?>
+                        <option value="<?= e($value) ?>"<?= selected($editGoal['recurrence_type'] ?? 'daily', $value) ?>><?= e($label) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label>Başlangıç tarihi <input type="date" name="start_date" value="<?= e($editGoal['start_date'] ?? $today) ?>" required></label>
+            <label>Bitiş tarihi <small class="muted">Opsiyonel</small><input type="date" name="end_date" value="<?= e($editGoal['end_date'] ?? '') ?>"></label>
+            <label class="checkbox-line"><input type="checkbox" name="active" value="1"<?= checked((int) ($editGoal['active'] ?? 1) === 1) ?>> Aktif</label>
+            <label class="wide">Açıklama <textarea name="description" placeholder="Beklenen çıktı, kontrol notu veya düzenli görev detayı"><?= e($editGoal['description'] ?? '') ?></textarea></label>
+            <div class="actions wide">
+                <?php if ($editGoal): ?><a class="btn" href="<?= e(app_url('recurring_tasks')) ?>">Yeni düzenli görev atama</a><?php endif; ?>
+                <button class="btn primary" type="submit"><?= $editGoal ? 'Güncelle' : 'Kaydet' ?></button>
+            </div>
+        </form>
+    </details>
+
+    <?php
+        $goalWhere = ' WHERE 1 = 1' . $goalScopeSql;
+        $goalParams = $goalScopeParams;
+        if (!empty($_GET['q'])) {
+            $goalWhere .= ' AND (g.title LIKE :goal_q OR g.description LIKE :goal_q OR assignee.full_name LIKE :goal_q OR assigner.full_name LIKE :goal_q)';
+            $goalParams[':goal_q'] = '%' . $_GET['q'] . '%';
+        }
+        if (!empty($_GET['recurrence_type']) && array_key_exists($_GET['recurrence_type'], $recurrenceOptions)) {
+            $goalWhere .= ' AND g.recurrence_type = :goal_recurrence_type';
+            $goalParams[':goal_recurrence_type'] = $_GET['recurrence_type'];
+        }
+        if (isset($_GET['active']) && $_GET['active'] !== '') {
+            $goalWhere .= ' AND g.active = :goal_active';
+            $goalParams[':goal_active'] = (int) $_GET['active'] === 1 ? 1 : 0;
+        }
+        $goals = rows("SELECT g.*, assigner.full_name assigned_by_name, assigner.role assigned_by_role, assignee.full_name assigned_to_name, assignee.role assigned_to_role FROM goals g LEFT JOIN users assigner ON assigner.id = g.assigned_by LEFT JOIN users assignee ON assignee.id = g.assigned_to {$goalWhere} ORDER BY g.active DESC, g.updated_at DESC", $goalParams);
+
+        $occurrenceWhere = ' WHERE 1 = 1' . $goalScopeSql;
+        $occurrenceParams = $goalScopeParams;
+        if (!empty($_GET['q'])) {
+            $occurrenceWhere .= ' AND (g.title LIKE :occ_q OR g.description LIKE :occ_q OR assignee.full_name LIKE :occ_q OR assigner.full_name LIKE :occ_q)';
+            $occurrenceParams[':occ_q'] = '%' . $_GET['q'] . '%';
+        }
+        if (!empty($_GET['recurrence_type']) && array_key_exists($_GET['recurrence_type'], $recurrenceOptions)) {
+            $occurrenceWhere .= ' AND g.recurrence_type = :occ_recurrence_type';
+            $occurrenceParams[':occ_recurrence_type'] = $_GET['recurrence_type'];
+        }
+        $requestedOccurrenceStatus = (string) ($_GET['recurring_task_status'] ?? ($_GET['goal_status'] ?? ''));
+        if ($requestedOccurrenceStatus !== '' && array_key_exists($requestedOccurrenceStatus, $occurrenceStatuses)) {
+            $occurrenceWhere .= ' AND go.status = :occ_status';
+            $occurrenceParams[':occ_status'] = $requestedOccurrenceStatus;
+        }
+        if (isset($_GET['active']) && $_GET['active'] !== '') {
+            $occurrenceWhere .= ' AND g.active = :occ_active';
+            $occurrenceParams[':occ_active'] = (int) $_GET['active'] === 1 ? 1 : 0;
+        }
+        apply_date_filter($occurrenceWhere, $occurrenceParams, 'go.due_date', $_GET);
+        filter_bar('recurring_tasks', [
+            'recurrence_type' => ['_label' => 'Tekrar türü', 'items' => $recurrenceOptions],
+            'recurring_task_status' => ['_label' => 'Görev durumu', '_selected' => $requestedOccurrenceStatus, 'items' => $occurrenceStatuses],
+            'active' => ['_label' => 'Tanım durumu', 'items' => ['1' => 'Aktif', '0' => 'Pasif']],
+        ], true);
+        $occurrences = rows("SELECT go.*, g.title, g.description, g.recurrence_type, g.active, g.assigned_by, g.assigned_to, assigner.full_name assigned_by_name, assigner.role assigned_by_role, assignee.full_name assigned_to_name, assignee.role assigned_to_role FROM goal_occurrences go JOIN goals g ON g.id = go.goal_id LEFT JOIN users assigner ON assigner.id = g.assigned_by LEFT JOIN users assignee ON assignee.id = g.assigned_to {$occurrenceWhere} ORDER BY CASE go.status WHEN 'gecikti' THEN 0 WHEN 'bekliyor' THEN 1 ELSE 2 END, go.due_date ASC, g.title LIMIT 120", $occurrenceParams);
+    ?>
+
+    <section class="panel task-list-panel">
+        <div class="section-title">
+            <h2>Görev akışı</h2>
+            <span class="muted"><?= e(count($occurrences)) ?> kayıt</span>
+        </div>
+        <div class="table-wrap task-table-wrap">
+            <table class="task-table">
+                <thead><tr><th>İş</th><th>Atayan</th><th>Atanan</th><th>Tekrar</th><th>Tarih</th><th>Durum</th><th>Aksiyon</th></tr></thead>
+                <tbody>
+                <?php foreach ($occurrences as $row): ?>
+                    <?php
+                        $statusLabel = $occurrenceStatuses[$row['status']] ?? $row['status'];
+                        $statusClass = $row['status'] === 'tamamlandi' ? 'success' : ($row['status'] === 'gecikti' ? 'danger' : 'soft');
+                    ?>
+                    <tr class="<?= e($row['status'] === 'gecikti' ? 'task-row overdue-task' : 'task-row') ?>">
+                        <td class="task-title-cell"><strong><?= e($row['title']) ?></strong><?php if ($row['description']): ?><small><?= e($row['description']) ?></small><?php endif; ?></td>
+                        <td><?= e($row['assigned_by_name'] ?? 'Silinmiş kullanıcı') ?><small><?= e(role_label($row['assigned_by_role'] ?? '')) ?></small></td>
+                        <td><?= e($row['assigned_to_name'] ?? 'Silinmiş kullanıcı') ?><small><?= e(role_label($row['assigned_to_role'] ?? '')) ?></small></td>
+                        <td><?= e($recurrenceOptions[$row['recurrence_type']] ?? $row['recurrence_type']) ?></td>
+                        <td><?= e($row['due_date']) ?></td>
+                        <td><span class="badge <?= e($statusClass) ?>"><?= e($statusLabel) ?></span></td>
+                        <td class="task-actions-cell">
+                            <?php if ($row['status'] !== 'tamamlandi' && user_can_complete_goal_occurrence($row)): ?>
+                                <form method="post" action="<?= e(app_url('complete_recurring_task_occurrence')) ?>" class="inline-form task-complete-form">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="id" value="<?= e($row['id']) ?>">
+                                    <input name="completion_note" placeholder="Tamamlama notu" aria-label="Tamamlama notu">
+                                    <button class="btn small" type="submit">Tamamla</button>
+                                </form>
+                            <?php elseif ($row['status'] === 'tamamlandi'): ?>
+                                <span class="muted">Tamamlandı: <?= e($row['completed_at'] ?: '-') ?></span>
+                            <?php else: ?>
+                                <span class="muted">Atanan kişi tamamlayabilir.</span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php if (!$occurrences): ?><p class="empty-state">Bu filtrelerle düzenli görev yok.</p><?php endif; ?>
+        </div>
+    </section>
+
+    <section class="panel task-list-panel">
+        <div class="section-title">
+            <h2>Düzenli görev atama tanımları</h2>
+            <span class="muted"><?= e(count($goals)) ?> tanım</span>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>Başlık</th><th>Atayan</th><th>Atanan</th><th>Tekrar</th><th>Başlangıç</th><th>Bitiş</th><th>Durum</th><th>Aksiyon</th></tr></thead>
+                <tbody>
+                <?php foreach ($goals as $goal): ?>
+                    <tr>
+                        <td><strong><?= e($goal['title']) ?></strong><?php if ($goal['description']): ?><small><?= e($goal['description']) ?></small><?php endif; ?></td>
+                        <td><?= e($goal['assigned_by_name'] ?? 'Silinmiş kullanıcı') ?><small><?= e(role_label($goal['assigned_by_role'] ?? '')) ?></small></td>
+                        <td><?= e($goal['assigned_to_name'] ?? 'Silinmiş kullanıcı') ?><small><?= e(role_label($goal['assigned_to_role'] ?? '')) ?></small></td>
+                        <td><?= e($recurrenceOptions[$goal['recurrence_type']] ?? $goal['recurrence_type']) ?></td>
+                        <td><?= e($goal['start_date']) ?></td>
+                        <td><?= e($goal['end_date'] ?: '-') ?></td>
+                        <td><span class="badge <?= (int) $goal['active'] === 1 ? 'success' : 'soft' ?>"><?= (int) $goal['active'] === 1 ? 'Aktif' : 'Pasif' ?></span></td>
+                        <td class="actions-cell">
+                            <?php if (can_manage_goal($goal)): ?>
+                                <a class="btn small" href="<?= e(app_url('recurring_tasks', ['edit_recurring_task' => $goal['id']])) ?>">Düzenle</a>
+                                <form method="post" action="<?= e(app_url('toggle_recurring_task')) ?>" class="inline-form">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="id" value="<?= e($goal['id']) ?>">
+                                    <input type="hidden" name="active" value="<?= (int) $goal['active'] === 1 ? 0 : 1 ?>">
+                                    <button class="btn small" type="submit"><?= (int) $goal['active'] === 1 ? 'Pasifleştir' : 'Aktifleştir' ?></button>
+                                </form>
+                            <?php else: ?>
+                                <span class="muted">Yetki yok</span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php if (!$goals): ?><p class="empty-state">Görünen düzenli görev atama tanımı yok.</p><?php endif; ?>
+        </div>
+    </section>
     <?php
     render_footer();
     exit;
