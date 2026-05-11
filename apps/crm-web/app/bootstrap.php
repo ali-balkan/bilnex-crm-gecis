@@ -478,10 +478,50 @@ function init_db(): void
             FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
         );
 
+        CREATE TABLE IF NOT EXISTS central_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            request_type TEXT NOT NULL,
+            requester_name TEXT NOT NULL,
+            company_id INTEGER,
+            sql_customer_id INTEGER,
+            assigned_to INTEGER NOT NULL,
+            assigned_by INTEGER,
+            assigned_at TEXT,
+            phone TEXT,
+            email TEXT,
+            city TEXT,
+            district TEXT,
+            product_interest TEXT,
+            description TEXT,
+            source TEXT NOT NULL DEFAULT 'Bilnex Merkez',
+            status TEXT NOT NULL DEFAULT 'Yeni',
+            created_by INTEGER,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE SET NULL,
+            FOREIGN KEY (assigned_to) REFERENCES users(id) ON DELETE RESTRICT,
+            FOREIGN KEY (assigned_by) REFERENCES users(id) ON DELETE SET NULL,
+            FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS central_request_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            central_request_id INTEGER NOT NULL,
+            user_id INTEGER,
+            action TEXT NOT NULL,
+            old_status TEXT,
+            new_status TEXT,
+            note TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (central_request_id) REFERENCES central_requests(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+        );
+
         CREATE TABLE IF NOT EXISTS interactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             company_id INTEGER NOT NULL,
             sql_customer_id INTEGER,
+            central_request_id INTEGER,
             user_id INTEGER,
             interaction_date TEXT NOT NULL,
             type TEXT NOT NULL,
@@ -490,6 +530,7 @@ function init_db(): void
             next_followup_date TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE RESTRICT,
+            FOREIGN KEY (central_request_id) REFERENCES central_requests(id) ON DELETE SET NULL,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
         );
 
@@ -513,6 +554,7 @@ function init_db(): void
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             company_id INTEGER,
             sql_customer_id INTEGER,
+            central_request_id INTEGER,
             title TEXT NOT NULL,
             description TEXT,
             assigned_by INTEGER,
@@ -523,6 +565,7 @@ function init_db(): void
             completed_at TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (central_request_id) REFERENCES central_requests(id) ON DELETE SET NULL,
             FOREIGN KEY (assigned_by) REFERENCES users(id) ON DELETE SET NULL,
             FOREIGN KEY (assigned_to) REFERENCES users(id) ON DELETE SET NULL
         );
@@ -560,6 +603,9 @@ function init_db(): void
         CREATE INDEX IF NOT EXISTS idx_interactions_user_date ON interactions(user_id, interaction_date);
         CREATE INDEX IF NOT EXISTS idx_interactions_company_date ON interactions(company_id, interaction_date);
         CREATE INDEX IF NOT EXISTS idx_interactions_result_date ON interactions(result, interaction_date);
+        CREATE INDEX IF NOT EXISTS idx_central_requests_assigned_status ON central_requests(assigned_to, status);
+        CREATE INDEX IF NOT EXISTS idx_central_requests_company ON central_requests(company_id);
+        CREATE INDEX IF NOT EXISTS idx_central_request_logs_request ON central_request_logs(central_request_id, created_at);
         CREATE INDEX IF NOT EXISTS idx_goals_assignee_active ON goals(assigned_to, active);
         CREATE INDEX IF NOT EXISTS idx_goal_occurrences_due_status ON goal_occurrences(due_date, status);
     ");
@@ -650,11 +696,19 @@ function init_db(): void
             break;
         }
     }
+    $taskColumns = $pdo->query('PRAGMA table_info(tasks)')->fetchAll();
+    $taskColumnNames = array_map(fn($column) => $column['name'], $taskColumns);
+    if (!in_array('central_request_id', $taskColumnNames, true)) {
+        $pdo->exec("ALTER TABLE tasks ADD COLUMN central_request_id INTEGER");
+    }
 
     $interactionColumns = $pdo->query('PRAGMA table_info(interactions)')->fetchAll();
     $interactionColumnNames = array_map(fn($column) => $column['name'], $interactionColumns);
     if (!in_array('sql_customer_id', $interactionColumnNames, true)) {
         $pdo->exec("ALTER TABLE interactions ADD COLUMN sql_customer_id INTEGER");
+    }
+    if (!in_array('central_request_id', $interactionColumnNames, true)) {
+        $pdo->exec("ALTER TABLE interactions ADD COLUMN central_request_id INTEGER");
     }
 
     $opportunityColumns = $pdo->query('PRAGMA table_info(opportunities)')->fetchAll();
@@ -907,6 +961,216 @@ function opportunity_stages(): array
 function task_statuses(): array
 {
     return ['Açık', 'Tamamlandı'];
+}
+
+function central_request_types(): array
+{
+    return ['Demo talebi', 'Fiyat talebi', 'Bilgi talebi'];
+}
+
+function central_request_statuses(): array
+{
+    return ['Yeni', 'İş ortağına yönlendirildi', 'İlk görüşme yapıldı', 'Demo planlandı', 'Teklif verildi', 'Kazanıldı', 'Kaybedildi'];
+}
+
+function central_request_full_access(): bool
+{
+    return normalize_role(current_user()['role'] ?? null) === ROLE_ADMIN;
+}
+
+function central_request_assignable_roles_for_current_user(): ?array
+{
+    $role = normalize_role(current_user()['role'] ?? null);
+    if ($role === ROLE_ADMIN) {
+        return null;
+    }
+    if ($role === ROLE_MANAGER) {
+        return [ROLE_CHANNEL_MANAGER, ROLE_CHANNEL_SPECIALIST, ROLE_FIELD_SALES];
+    }
+    if ($role === ROLE_CHANNEL_MANAGER) {
+        return [ROLE_CHANNEL_SPECIALIST, ROLE_FIELD_SALES];
+    }
+    return [];
+}
+
+function central_request_assignable_users(): array
+{
+    $userId = (int) (current_user()['id'] ?? 0);
+    if ($userId <= 0) {
+        return [];
+    }
+
+    $roles = central_request_assignable_roles_for_current_user();
+    if ($roles === null) {
+        return db()->query('SELECT id, full_name, username, role FROM users WHERE active = 1 ORDER BY full_name')->fetchAll();
+    }
+
+    $params = [':central_assign_self' => $userId];
+    $conditions = ['id = :central_assign_self'];
+    $roleValues = role_database_values($roles);
+    if ($roleValues) {
+        $placeholders = [];
+        foreach ($roleValues as $index => $roleValue) {
+            $param = ':central_assign_role_' . $index;
+            $placeholders[] = $param;
+            $params[$param] = $roleValue;
+        }
+        $conditions[] = 'role IN (' . implode(', ', $placeholders) . ')';
+    }
+
+    $stmt = db()->prepare('SELECT id, full_name, username, role FROM users WHERE active = 1 AND (' . implode(' OR ', $conditions) . ') ORDER BY CASE WHEN id = :central_assign_self THEN 0 ELSE 1 END, full_name');
+    $stmt->execute($params);
+    return $stmt->fetchAll();
+}
+
+function can_create_central_request(): bool
+{
+    $role = normalize_role(current_user()['role'] ?? null);
+    return in_array($role, [ROLE_ADMIN, ROLE_MANAGER, ROLE_CHANNEL_MANAGER], true);
+}
+
+function can_assign_central_request_to(int $userId): bool
+{
+    if ($userId <= 0) {
+        return false;
+    }
+    foreach (central_request_assignable_users() as $user) {
+        if ((int) $user['id'] === $userId) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function central_request_visibility_condition(string $alias = 'cr'): array
+{
+    if (central_request_full_access()) {
+        return ['', []];
+    }
+
+    $userId = (int) (current_user()['id'] ?? 0);
+    if ($userId <= 0) {
+        return [' AND 1 = 0', []];
+    }
+
+    $prefix = preg_replace('/[^A-Za-z0-9_]/', '', $alias) ?: 'cr';
+    $assignedToParam = ':central_scope_assigned_to_' . $prefix;
+    $assignedByParam = ':central_scope_assigned_by_' . $prefix;
+    $createdByParam = ':central_scope_created_by_' . $prefix;
+    $params = [
+        $assignedToParam => $userId,
+        $assignedByParam => $userId,
+        $createdByParam => $userId,
+    ];
+    $conditions = [
+        "{$alias}.assigned_to = {$assignedToParam}",
+        "{$alias}.assigned_by = {$assignedByParam}",
+        "{$alias}.created_by = {$createdByParam}",
+    ];
+
+    $roleValues = role_database_values(central_request_assignable_roles_for_current_user() ?? []);
+    if ($roleValues) {
+        $placeholders = [];
+        foreach ($roleValues as $index => $roleValue) {
+            $param = ':central_scope_role_' . $prefix . '_' . $index;
+            $placeholders[] = $param;
+            $params[$param] = $roleValue;
+        }
+        $conditions[] = "EXISTS (SELECT 1 FROM users central_scope_user WHERE central_scope_user.id = {$alias}.assigned_to AND central_scope_user.role IN (" . implode(', ', $placeholders) . '))';
+    }
+
+    return [' AND (' . implode(' OR ', $conditions) . ')', $params];
+}
+
+function user_can_access_central_request(int $requestId): bool
+{
+    if ($requestId <= 0) {
+        return false;
+    }
+
+    [$scopeSql, $scopeParams] = central_request_visibility_condition('cr');
+    $stmt = db()->prepare("SELECT COUNT(*) FROM central_requests cr WHERE cr.id = :id{$scopeSql}");
+    $stmt->execute($scopeParams + [':id' => $requestId]);
+    return (int) $stmt->fetchColumn() > 0;
+}
+
+function can_manage_central_request(array $request): bool
+{
+    if (central_request_full_access()) {
+        return true;
+    }
+
+    $role = normalize_role(current_user()['role'] ?? null);
+    $userId = (int) (current_user()['id'] ?? 0);
+    if (!in_array($role, [ROLE_MANAGER, ROLE_CHANNEL_MANAGER], true) || $userId <= 0) {
+        return false;
+    }
+
+    $assignedTo = (int) ($request['assigned_to'] ?? 0);
+    return (int) ($request['assigned_by'] ?? 0) === $userId
+        || (int) ($request['created_by'] ?? 0) === $userId
+        || ($assignedTo > 0 && can_assign_central_request_to($assignedTo));
+}
+
+function can_update_central_request_status(array $request): bool
+{
+    $userId = (int) (current_user()['id'] ?? 0);
+    return $userId > 0 && ((int) ($request['assigned_to'] ?? 0) === $userId || can_manage_central_request($request));
+}
+
+function central_request_log(int $requestId, string $action, ?string $oldStatus = null, ?string $newStatus = null, string $note = ''): void
+{
+    if ($requestId <= 0) {
+        return;
+    }
+
+    db()->prepare('INSERT INTO central_request_logs (central_request_id, user_id, action, old_status, new_status, note) VALUES (:central_request_id, :user_id, :action, :old_status, :new_status, :note)')->execute([
+        ':central_request_id' => $requestId,
+        ':user_id' => current_user()['id'] ?? null,
+        ':action' => $action,
+        ':old_status' => $oldStatus,
+        ':new_status' => $newStatus,
+        ':note' => $note,
+    ]);
+}
+
+function central_request_followup_title(string $requestType): string
+{
+    $type = function_exists('mb_strtolower') ? mb_strtolower($requestType, 'UTF-8') : strtolower($requestType);
+    if (str_contains($type, 'fiyat')) {
+        return 'Merkezden gelen fiyat talebini ara';
+    }
+    if (str_contains($type, 'bilgi')) {
+        return 'Merkezden gelen bilgi talebini ara';
+    }
+    return 'Merkezden gelen demo talebini ara';
+}
+
+function create_central_request_followup_task(array $request): void
+{
+    $requestId = (int) ($request['id'] ?? 0);
+    $assignedTo = (int) ($request['assigned_to'] ?? 0);
+    if ($requestId <= 0 || $assignedTo <= 0) {
+        return;
+    }
+
+    $descriptionParts = array_filter([
+        trim((string) ($request['requester_name'] ?? '')),
+        trim((string) ($request['phone'] ?? '')),
+        trim((string) ($request['product_interest'] ?? '')),
+    ]);
+
+    db()->prepare('INSERT INTO tasks (company_id, sql_customer_id, central_request_id, title, description, assigned_by, assigned_to, due_date, status) VALUES (:company_id, :sql_customer_id, :central_request_id, :title, :description, :assigned_by, :assigned_to, :due_date, :status)')->execute([
+        ':company_id' => (int) ($request['company_id'] ?? 0) > 0 ? (int) $request['company_id'] : null,
+        ':sql_customer_id' => (int) ($request['sql_customer_id'] ?? 0) > 0 ? (int) $request['sql_customer_id'] : null,
+        ':central_request_id' => $requestId,
+        ':title' => central_request_followup_title((string) ($request['request_type'] ?? 'Demo talebi')),
+        ':description' => implode(' - ', $descriptionParts),
+        ':assigned_by' => current_user()['id'] ?? null,
+        ':assigned_to' => $assignedTo,
+        ':due_date' => (new DateTimeImmutable('tomorrow'))->format('Y-m-d'),
+        ':status' => 'Açık',
+    ]);
 }
 
 function can_manage_users(): bool

@@ -464,6 +464,7 @@ function nav_icon(string $target): string
         'dashboard' => '<path d="M3 13h8V3H3v10Zm0 8h8v-6H3v6Zm10 0h8V11h-8v10Zm0-18v6h8V3h-8Z"/>',
         'users' => '<path d="M16 11a4 4 0 1 0-3.3-6.3A5 5 0 0 1 16 11Zm-8 0a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 2c-3.3 0-6 1.7-6 3.8V20h12v-3.2C14 14.7 11.3 13 8 13Zm8 0c-.7 0-1.4.1-2 .3 1.2.9 2 2.1 2 3.5V20h6v-3.2c0-2.1-2.7-3.8-6-3.8Z"/>',
         'companies' => '<path d="M4 21V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v16H4Zm4-12h2V7H8v2Zm0 4h2v-2H8v2Zm0 4h2v-2H8v2Zm4-8h2V7h-2v2Zm0 4h2v-2h-2v2Zm0 4h2v-2h-2v2Zm7 4v-9h1a2 2 0 0 1 2 2v7h-3Z"/>',
+        'central_requests' => '<path d="M4 4h16v13H7l-3 3V4Zm4 4v2h8V8H8Zm0 4v2h5v-2H8Zm11-9 2 2-2 2-2-2 2-2Z"/>',
         'interactions' => '<path d="M4 5a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3h-4.7L7 20v-5a3 3 0 0 1-3-3V5Zm4 2v2h8V7H8Zm0 4h5V9H8v2Z"/>',
         'followups' => '<path d="M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm3 4H6v2h2V8Zm2 0v2h8V8h-8Zm-2 5H6v2h2v-2Zm2 0v2h8v-2h-8Z"/>',
         'recurring_tasks' => '<path d="M12 2a10 10 0 1 0 10 10h-2a8 8 0 1 1-8-8V2Zm0 4a6 6 0 1 0 6 6h-2a4 4 0 1 1-4-4V6Zm0 4a2 2 0 1 0 2 2h-2v-2Z"/>',
@@ -586,6 +587,7 @@ function render_header(string $title): void
     $nav = [
         ['dashboard', 'Dashboard'],
         ['companies', 'Cariler'],
+        ['central_requests', 'Merkez Talepleri'],
         ['interactions', 'Görüşme Ekle'],
         ['followups', 'Takip Listesi'],
         ['recurring_tasks', 'Düzenli Görev Atama'],
@@ -1293,6 +1295,122 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect_to('followups');
     }
 
+    if ($page === 'save_central_request') {
+        $requestId = (int) ($_POST['id'] ?? 0);
+        $existingRequest = null;
+        if ($requestId > 0) {
+            $existingRequest = rows('SELECT * FROM central_requests WHERE id = :id', [':id' => $requestId])[0] ?? null;
+            if (!$existingRequest) {
+                http_response_code(404);
+                exit('Merkez talebi bulunamadı.');
+            }
+            if (!user_can_access_central_request($requestId) || !can_update_central_request_status($existingRequest)) {
+                http_response_code(403);
+                exit('Bu merkez talebini güncelleme yetkiniz yok.');
+            }
+        } elseif (!can_create_central_request()) {
+            http_response_code(403);
+            exit('Merkez talebi oluşturma yetkiniz yok.');
+        }
+
+        $statusOptions = central_request_statuses();
+        $status = trim((string) ($_POST['status'] ?? ($existingRequest['status'] ?? 'Yeni')));
+        if (!in_array($status, $statusOptions, true)) {
+            $status = $existingRequest['status'] ?? 'Yeni';
+        }
+
+        if ($existingRequest && !can_manage_central_request($existingRequest)) {
+            $oldStatus = (string) ($existingRequest['status'] ?? '');
+            db()->prepare('UPDATE central_requests SET status = :status, updated_at = CURRENT_TIMESTAMP WHERE id = :id')->execute([
+                ':status' => $status,
+                ':id' => $requestId,
+            ]);
+            if ($oldStatus !== $status) {
+                central_request_log($requestId, 'Durum güncellendi', $oldStatus, $status, trim((string) ($_POST['status_note'] ?? '')));
+            }
+            flash('Merkez talebi durumu güncellendi.');
+            redirect_to('central_requests', ['id' => $requestId]);
+        }
+
+        $requestType = trim((string) ($_POST['request_type'] ?? 'Demo talebi'));
+        if (!in_array($requestType, central_request_types(), true)) {
+            $requestType = 'Demo talebi';
+        }
+        $requesterName = trim((string) ($_POST['requester_name'] ?? ''));
+        $assignedTo = (int) ($_POST['assigned_to'] ?? 0);
+        if ($requesterName === '' || !can_assign_central_request_to($assignedTo)) {
+            flash('Firma / kişi adı ve yetki dahilindeki ilgili personel zorunludur.', 'danger');
+            redirect_to('central_requests', $requestId > 0 ? ['id' => $requestId] : []);
+        }
+
+        $companyId = (int) ($_POST['company_id'] ?? 0);
+        $sqlCustomerId = (int) ($_POST['sql_customer_id'] ?? 0);
+        if ($sqlCustomerId > 0 && company_source() === 'sqlserver') {
+            $syncedCompanyId = ensure_local_company_for_sql_customer($sqlCustomerId, (int) current_user()['id']);
+            if (!$syncedCompanyId) {
+                flash('SQL cari bulunamadı veya okunamadı. Lütfen cari aramasından tekrar seçin.', 'danger');
+                redirect_to('central_requests', $requestId > 0 ? ['id' => $requestId] : []);
+            }
+            $companyId = $syncedCompanyId;
+        } elseif ($companyId > 0) {
+            require_company_access($companyId);
+            $sqlCustomerId = company_sql_customer_id($companyId) ?? 0;
+        }
+        if ($companyId <= 0) {
+            flash('Atanan cari seçimi zorunludur.', 'danger');
+            redirect_to('central_requests', $requestId > 0 ? ['id' => $requestId] : []);
+        }
+
+        $assignmentChanged = !$existingRequest || (int) ($existingRequest['assigned_to'] ?? 0) !== $assignedTo;
+        if ($assignmentChanged && $status === 'Yeni') {
+            $status = 'İş ortağına yönlendirildi';
+        }
+
+        $data = [
+            ':request_type' => $requestType,
+            ':requester_name' => $requesterName,
+            ':company_id' => $companyId,
+            ':sql_customer_id' => $sqlCustomerId > 0 ? $sqlCustomerId : null,
+            ':assigned_to' => $assignedTo,
+            ':assigned_by' => current_user()['id'],
+            ':phone' => trim((string) ($_POST['phone'] ?? '')),
+            ':email' => trim((string) ($_POST['email'] ?? '')),
+            ':city' => trim((string) ($_POST['city'] ?? '')),
+            ':district' => trim((string) ($_POST['district'] ?? '')),
+            ':product_interest' => trim((string) ($_POST['product_interest'] ?? '')),
+            ':description' => trim((string) ($_POST['description'] ?? '')),
+            ':source' => 'Bilnex Merkez',
+            ':status' => $status,
+        ];
+
+        if ($requestId > 0) {
+            $data[':id'] = $requestId;
+            db()->prepare('UPDATE central_requests SET request_type = :request_type, requester_name = :requester_name, company_id = :company_id, sql_customer_id = :sql_customer_id, assigned_to = :assigned_to, assigned_by = :assigned_by, assigned_at = CURRENT_TIMESTAMP, phone = :phone, email = :email, city = :city, district = :district, product_interest = :product_interest, description = :description, source = :source, status = :status, updated_at = CURRENT_TIMESTAMP WHERE id = :id')->execute($data);
+            $oldStatus = (string) ($existingRequest['status'] ?? '');
+            if ($oldStatus !== $status) {
+                central_request_log($requestId, 'Durum güncellendi', $oldStatus, $status);
+            }
+            if ($assignmentChanged) {
+                central_request_log($requestId, 'Personel yönlendirmesi güncellendi', null, $status, 'Yeni ilgili personel atandı.');
+            }
+            flash('Merkez talebi güncellendi.');
+        } else {
+            $data[':created_by'] = current_user()['id'];
+            db()->prepare('INSERT INTO central_requests (request_type, requester_name, company_id, sql_customer_id, assigned_to, assigned_by, assigned_at, phone, email, city, district, product_interest, description, source, status, created_by) VALUES (:request_type, :requester_name, :company_id, :sql_customer_id, :assigned_to, :assigned_by, CURRENT_TIMESTAMP, :phone, :email, :city, :district, :product_interest, :description, :source, :status, :created_by)')->execute($data);
+            $requestId = (int) db()->lastInsertId();
+            central_request_log($requestId, 'Merkez talebi oluşturuldu', null, $status, 'Talep Bilnex Merkez kaynağıyla açıldı.');
+            central_request_log($requestId, 'Personel yönlendirmesi yapıldı', null, $status, 'İlgili personele takip oluşturuldu.');
+            flash('Merkez talebi oluşturuldu ve takip atandı.');
+        }
+
+        if ($assignmentChanged) {
+            $requestForTask = rows('SELECT * FROM central_requests WHERE id = :id', [':id' => $requestId])[0] ?? [];
+            create_central_request_followup_task($requestForTask);
+        }
+
+        redirect_to('central_requests', ['id' => $requestId]);
+    }
+
     if (in_array($page, ['save_recurring_task', 'save_goal'], true)) {
         $goalId = (int) ($_POST['id'] ?? 0);
         $existingGoal = null;
@@ -1646,6 +1764,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($page === 'save_interaction') {
         $id = (int) ($_POST['id'] ?? 0);
         $companyId = (int) ($_POST['company_id'] ?? 0);
+        $centralRequestId = (int) ($_POST['central_request_id'] ?? 0);
+        $centralRequest = null;
         $existingInteraction = null;
         if ($id > 0) {
             [$editInteractionScopeSql, $editInteractionScopeParams] = interaction_visibility_condition('i');
@@ -1653,6 +1773,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$existingInteraction) {
                 http_response_code(404);
                 exit('Görüşme kaydı bulunamadı veya düzenleme yetkiniz yok.');
+            }
+        }
+        if ($centralRequestId > 0) {
+            if (!user_can_access_central_request($centralRequestId)) {
+                http_response_code(403);
+                exit('Bu merkez talebi için görüşme ekleme yetkiniz yok.');
+            }
+            $centralRequest = rows('SELECT * FROM central_requests WHERE id = :id', [':id' => $centralRequestId])[0] ?? null;
+            if (!$centralRequest) {
+                http_response_code(404);
+                exit('Merkez talebi bulunamadı.');
+            }
+            if ($companyId <= 0) {
+                $companyId = (int) ($centralRequest['company_id'] ?? 0);
             }
         }
         if ($companyId <= 0) {
@@ -1682,13 +1816,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ':result' => $result,
             ':note' => trim($_POST['note'] ?? ''),
             ':next_followup_date' => $nextFollowupDate,
+            ':central_request_id' => $centralRequestId > 0 ? $centralRequestId : null,
         ];
         if ($id > 0) {
             $data[':id'] = $id;
-            db()->prepare('UPDATE interactions SET company_id = :company_id, sql_customer_id = :sql_customer_id, interaction_date = :interaction_date, type = :type, result = :result, note = :note, next_followup_date = :next_followup_date WHERE id = :id')->execute($data);
+            db()->prepare('UPDATE interactions SET company_id = :company_id, sql_customer_id = :sql_customer_id, central_request_id = :central_request_id, interaction_date = :interaction_date, type = :type, result = :result, note = :note, next_followup_date = :next_followup_date WHERE id = :id')->execute($data);
         } else {
             $data[':user_id'] = current_user()['id'];
-            db()->prepare('INSERT INTO interactions (company_id, sql_customer_id, user_id, interaction_date, type, result, note, next_followup_date) VALUES (:company_id, :sql_customer_id, :user_id, :interaction_date, :type, :result, :note, :next_followup_date)')->execute($data);
+            db()->prepare('INSERT INTO interactions (company_id, sql_customer_id, central_request_id, user_id, interaction_date, type, result, note, next_followup_date) VALUES (:company_id, :sql_customer_id, :central_request_id, :user_id, :interaction_date, :type, :result, :note, :next_followup_date)')->execute($data);
+        }
+        if ($centralRequest) {
+            $statusByResult = [
+                'Demo istiyor' => 'Demo planlandı',
+                'Teklif istiyor' => 'Teklif verildi',
+                'İlgilenmiyor' => 'Kaybedildi',
+                'Olumsuz' => 'Kaybedildi',
+            ];
+            $oldStatus = (string) ($centralRequest['status'] ?? '');
+            $newStatus = $statusByResult[$result] ?? (in_array($oldStatus, ['Yeni', 'İş ortağına yönlendirildi'], true) ? 'İlk görüşme yapıldı' : $oldStatus);
+            if ($newStatus !== $oldStatus && can_update_central_request_status($centralRequest)) {
+                db()->prepare('UPDATE central_requests SET status = :status, updated_at = CURRENT_TIMESTAMP WHERE id = :id')->execute([
+                    ':status' => $newStatus,
+                    ':id' => $centralRequestId,
+                ]);
+                central_request_log($centralRequestId, 'Görüşme sonucu işlendi', $oldStatus, $newStatus, trim((string) ($_POST['note'] ?? '')));
+            } else {
+                central_request_log($centralRequestId, 'Görüşme eklendi', $oldStatus, $oldStatus, trim((string) ($_POST['note'] ?? '')));
+            }
         }
         if (company_source() !== 'sqlserver') {
             db()->prepare("UPDATE companies SET next_followup_date = COALESCE(:next_followup_date, next_followup_date), status = CASE WHEN status = 'Yeni kayıt' THEN 'Görüşüldü' ELSE status END, updated_at = CURRENT_TIMESTAMP WHERE id = :company_id")->execute([
@@ -1718,6 +1872,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         flash($id > 0 ? 'Görüşme kaydı güncellendi.' : 'Görüşme notu eklendi.');
         if (($_POST['return_to'] ?? '') === 'interactions') {
             redirect_to('interactions', ['date_filter' => 'today']);
+        }
+        if (($_POST['return_to'] ?? '') === 'central_request' && $centralRequestId > 0) {
+            redirect_to('central_requests', ['id' => $centralRequestId]);
         }
         redirect_to('company_view', ['id' => $companyId]);
     }
@@ -2502,6 +2659,275 @@ if ($page === 'company_form') {
         </div>
     </form>
     <?php render_tax_office_dialog(); ?>
+    <?php
+    render_footer();
+    exit;
+}
+
+if ($page === 'central_requests') {
+    render_header('Merkez Talepleri');
+    $usingSqlCustomerPicker = company_source() === 'sqlserver';
+    $assignableUsers = central_request_assignable_users();
+    $requestTypes = array_combine(central_request_types(), central_request_types());
+    $requestStatuses = array_combine(central_request_statuses(), central_request_statuses());
+    $editRequestId = (int) ($_GET['id'] ?? 0);
+    $editRequest = null;
+    if ($editRequestId > 0) {
+        if (!user_can_access_central_request($editRequestId)) {
+            http_response_code(403);
+            exit('Bu merkez talebini görüntüleme yetkiniz yok.');
+        }
+        $editRequest = rows('SELECT cr.*, c.name company_name, c.account_type company_account_type, c.sql_customer_id company_sql_customer_id, assignee.full_name assigned_to_name, assignee.role assigned_to_role, assigner.full_name assigned_by_name, creator.full_name created_by_name FROM central_requests cr LEFT JOIN companies c ON c.id = cr.company_id LEFT JOIN users assignee ON assignee.id = cr.assigned_to LEFT JOIN users assigner ON assigner.id = cr.assigned_by LEFT JOIN users creator ON creator.id = cr.created_by WHERE cr.id = :id', [':id' => $editRequestId])[0] ?? null;
+        if (!$editRequest) {
+            http_response_code(404);
+            exit('Merkez talebi bulunamadı.');
+        }
+    }
+    $canManageCurrentRequest = $editRequest ? can_manage_central_request($editRequest) : can_create_central_request();
+    $canUpdateCurrentStatus = $editRequest ? can_update_central_request_status($editRequest) : false;
+    $centralCompanies = [];
+    if (!$usingSqlCustomerPicker) {
+        $companyWhere = ' WHERE 1 = 1';
+        $companyParams = [];
+        [$companyScopeSql, $companyScopeParams] = owned_company_condition('c');
+        $companyWhere .= $companyScopeSql;
+        $companyParams += $companyScopeParams;
+        $centralCompanies = rows("SELECT c.id, c.name, c.account_type, c.sql_customer_id FROM companies c {$companyWhere} ORDER BY c.name LIMIT 600", $companyParams);
+    }
+
+    [$centralScopeSql, $centralScopeParams] = central_request_visibility_condition('cr');
+    $where = ' WHERE 1 = 1' . $centralScopeSql;
+    $params = $centralScopeParams;
+    if (!empty($_GET['q'])) {
+        $where .= ' AND (cr.requester_name LIKE :q OR cr.phone LIKE :q OR cr.email LIKE :q OR cr.city LIKE :q OR cr.product_interest LIKE :q OR c.name LIKE :q OR assignee.full_name LIKE :q)';
+        $params[':q'] = '%' . $_GET['q'] . '%';
+    }
+    if (!empty($_GET['request_type']) && isset($requestTypes[$_GET['request_type']])) {
+        $where .= ' AND cr.request_type = :request_type';
+        $params[':request_type'] = $_GET['request_type'];
+    }
+    if (!empty($_GET['status']) && isset($requestStatuses[$_GET['status']])) {
+        $where .= ' AND cr.status = :status';
+        $params[':status'] = $_GET['status'];
+    }
+    $centralRequests = rows("SELECT cr.*, c.name company_name, c.account_type company_account_type, assignee.full_name assigned_to_name, assignee.role assigned_to_role FROM central_requests cr LEFT JOIN companies c ON c.id = cr.company_id LEFT JOIN users assignee ON assignee.id = cr.assigned_to {$where} ORDER BY CASE cr.status WHEN 'Yeni' THEN 0 WHEN 'İş ortağına yönlendirildi' THEN 1 WHEN 'İlk görüşme yapıldı' THEN 2 WHEN 'Demo planlandı' THEN 3 WHEN 'Teklif verildi' THEN 4 WHEN 'Kazanıldı' THEN 5 ELSE 6 END, cr.updated_at DESC LIMIT 150", $params);
+    $statusCounts = rows("SELECT cr.status, COUNT(*) total FROM central_requests cr LEFT JOIN companies c ON c.id = cr.company_id LEFT JOIN users assignee ON assignee.id = cr.assigned_to {$where} GROUP BY cr.status ORDER BY total DESC", $params);
+    $requestInteractions = [];
+    $requestLogs = [];
+    $requestTasks = [];
+    if ($editRequest) {
+        $requestInteractions = rows('SELECT i.*, u.full_name user_name, u.role user_role FROM interactions i LEFT JOIN users u ON u.id = i.user_id WHERE i.central_request_id = :id ORDER BY i.interaction_date DESC, i.created_at DESC', [':id' => $editRequestId]);
+        $requestLogs = rows('SELECT l.*, u.full_name user_name, u.role user_role FROM central_request_logs l LEFT JOIN users u ON u.id = l.user_id WHERE l.central_request_id = :id ORDER BY l.created_at DESC', [':id' => $editRequestId]);
+        $requestTasks = rows('SELECT t.*, assignee.full_name assigned_to_name FROM tasks t LEFT JOIN users assignee ON assignee.id = t.assigned_to WHERE t.central_request_id = :id ORDER BY t.created_at DESC', [':id' => $editRequestId]);
+    }
+    $historyItems = [];
+    foreach ($requestLogs as $log) {
+        $historyItems[] = [
+            'time' => $log['created_at'],
+            'title' => $log['action'],
+            'meta' => trim(($log['user_name'] ?? 'Sistem') . ' · ' . ($log['new_status'] ?: $log['old_status'] ?: '')),
+            'note' => $log['note'] ?? '',
+        ];
+    }
+    foreach ($requestInteractions as $interaction) {
+        $historyItems[] = [
+            'time' => $interaction['created_at'] ?: $interaction['interaction_date'],
+            'title' => $interaction['type'] . ' · ' . $interaction['result'],
+            'meta' => trim(($interaction['user_name'] ?? 'Silinmiş kullanıcı') . ' · ' . $interaction['interaction_date']),
+            'note' => $interaction['note'] ?? '',
+        ];
+    }
+    foreach ($requestTasks as $task) {
+        $taskNote = trim((string) ($task['title'] ?? ''));
+        $taskDescription = trim((string) ($task['description'] ?? ''));
+        if ($taskDescription !== '') {
+            $taskNote .= ($taskNote !== '' ? ' - ' : '') . $taskDescription;
+        }
+        $historyItems[] = [
+            'time' => $task['created_at'] ?? '',
+            'title' => 'Takip işi · ' . ($task['status'] ?? ''),
+            'meta' => trim(($task['assigned_to_name'] ?? 'Silinmiş kullanıcı') . ' · Termin: ' . ($task['due_date'] ?: '-')),
+            'note' => $taskNote,
+        ];
+    }
+    usort($historyItems, static fn($a, $b) => strcmp((string) $b['time'], (string) $a['time']));
+    $selectedCompanyLabel = $editRequest && !empty($editRequest['company_name']) ? company_display_label(['name' => $editRequest['company_name'], 'account_type' => $editRequest['company_account_type'] ?? '']) : 'Listeden cari seçin';
+    $centralInteractionResults = array_values(array_unique(array_merge(['Ulaşıldı', 'Ulaşılamadı', 'Demo istiyor', 'Teklif istiyor', 'İlgilenmiyor'], interaction_results())));
+    ?>
+
+    <section class="panel central-hero">
+        <div>
+            <span class="eyebrow">Bilnex Merkez</span>
+            <h2>Demo, fiyat ve bilgi taleplerini iş ortağı ekibine yönlendir</h2>
+            <p>Talep kaydedilince ilgili personele yarın tarihli takip işi otomatik oluşur; görüşmeler ve durum değişiklikleri aynı dosyada tutulur.</p>
+        </div>
+        <div class="central-status-board">
+            <?php foreach (central_request_statuses() as $statusName): ?>
+                <?php $count = 0; foreach ($statusCounts as $row) { if ($row['status'] === $statusName) { $count = (int) $row['total']; break; } } ?>
+                <a href="<?= e(app_url('central_requests', ['status' => $statusName])) ?>"><strong><?= e($count) ?></strong><span><?= e($statusName) ?></span></a>
+            <?php endforeach; ?>
+        </div>
+    </section>
+
+    <section class="central-layout">
+        <?php if ($canManageCurrentRequest || $canUpdateCurrentStatus): ?>
+        <article class="panel central-form-panel">
+            <div class="section-title">
+                <h2><?= e($editRequest ? 'Merkez talebi düzenle' : 'Yeni merkez talebi') ?></h2>
+                <?php if ($editRequest): ?><a class="btn small" href="<?= e(app_url('central_requests')) ?>">Yeni kayıt</a><?php endif; ?>
+            </div>
+            <form method="post" action="<?= e(app_url('save_central_request')) ?>" class="form-grid">
+                <?= csrf_field() ?>
+                <?php if ($editRequest): ?><input type="hidden" name="id" value="<?= e($editRequest['id']) ?>"><?php endif; ?>
+                <?php if ($canManageCurrentRequest): ?>
+                    <label>Talep türü
+                        <select name="request_type" required>
+                            <?php foreach (central_request_types() as $type): ?><option value="<?= e($type) ?>"<?= selected($editRequest['request_type'] ?? 'Demo talebi', $type) ?>><?= e($type) ?></option><?php endforeach; ?>
+                        </select>
+                    </label>
+                    <label>Firma / kişi adı <input name="requester_name" value="<?= e($editRequest['requester_name'] ?? '') ?>" required></label>
+                    <label class="wide">Atanan cari
+                        <?php if ($usingSqlCustomerPicker): ?>
+                            <input type="hidden" name="sql_customer_id" value="<?= e($editRequest['sql_customer_id'] ?? $editRequest['company_sql_customer_id'] ?? '') ?>" data-sql-customer-id>
+                            <div class="sql-customer-picker strong-picker" data-sql-customer-picker data-empty-label="Listeden cari seçin">
+                                <button class="lookup-button" type="button" data-open-sql-customer-picker><span data-sql-customer-label><?= e($selectedCompanyLabel) ?></span></button>
+                            </div>
+                        <?php else: ?>
+                            <select name="company_id" required>
+                                <option value="">Cari seçin</option>
+                                <?php foreach ($centralCompanies as $company): ?>
+                                    <option value="<?= e($company['id']) ?>"<?= selected($editRequest['company_id'] ?? '', $company['id']) ?>><?= e(company_display_label($company)) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        <?php endif; ?>
+                    </label>
+                    <label>İlgili personel
+                        <select name="assigned_to" required>
+                            <?php foreach ($assignableUsers as $user): ?>
+                                <option value="<?= e($user['id']) ?>"<?= selected($editRequest['assigned_to'] ?? (current_user()['id'] ?? ''), $user['id']) ?>><?= e($user['full_name'] . ' · ' . role_label($user['role'])) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
+                    <label>Durum
+                        <select name="status">
+                            <?php foreach (central_request_statuses() as $status): ?><option value="<?= e($status) ?>"<?= selected($editRequest['status'] ?? 'Yeni', $status) ?>><?= e($status) ?></option><?php endforeach; ?>
+                        </select>
+                    </label>
+                    <label>Telefon <input name="phone" value="<?= e($editRequest['phone'] ?? '') ?>"></label>
+                    <label>E-posta <input type="email" name="email" value="<?= e($editRequest['email'] ?? '') ?>"></label>
+                    <label>İl <input name="city" value="<?= e($editRequest['city'] ?? '') ?>"></label>
+                    <label>İlçe <input name="district" value="<?= e($editRequest['district'] ?? '') ?>"></label>
+                    <label class="wide">Ürün / hizmet ilgisi <input name="product_interest" value="<?= e($editRequest['product_interest'] ?? '') ?>"></label>
+                    <label class="wide">Açıklama <textarea name="description"><?= e($editRequest['description'] ?? '') ?></textarea></label>
+                <?php else: ?>
+                    <label>Durum
+                        <select name="status">
+                            <?php foreach (central_request_statuses() as $status): ?><option value="<?= e($status) ?>"<?= selected($editRequest['status'] ?? 'Yeni', $status) ?>><?= e($status) ?></option><?php endforeach; ?>
+                        </select>
+                    </label>
+                    <label class="wide">Durum notu <input name="status_note" placeholder="Kısa not"></label>
+                <?php endif; ?>
+                <div class="actions wide"><button class="btn primary" type="submit"><?= e($editRequest ? 'Kaydet' : 'Talebi kaydet ve takip ata') ?></button></div>
+            </form>
+        </article>
+        <?php endif; ?>
+
+        <article class="panel central-side-panel">
+            <div class="section-title"><h2>Talep özeti</h2><span class="muted"><?= e(count($centralRequests)) ?> kayıt</span></div>
+            <?php if ($editRequest): ?>
+                <dl class="meta compact-meta">
+                    <dt>Talep</dt><dd><?= e($editRequest['request_type']) ?></dd>
+                    <dt>Kaynak</dt><dd><?= e($editRequest['source']) ?></dd>
+                    <dt>Personel</dt><dd><?= e(($editRequest['assigned_to_name'] ?? '-') . ' · ' . role_label($editRequest['assigned_to_role'] ?? '')) ?></dd>
+                    <dt>Cari</dt><dd><?= e($selectedCompanyLabel) ?></dd>
+                </dl>
+            <?php else: ?>
+                <p class="muted">Soldaki formdan merkez talebi açın veya alttaki listeden bir kaydı seçin.</p>
+            <?php endif; ?>
+        </article>
+    </section>
+
+    <?php if ($editRequest): ?>
+    <section class="central-layout central-detail-layout">
+        <article class="panel">
+            <div class="section-title"><h2>Görüşme ekle</h2><span class="muted"><?= e($editRequest['assigned_to_name'] ?? '') ?></span></div>
+            <?php if (!empty($editRequest['company_id'])): ?>
+            <form method="post" action="<?= e(app_url('save_interaction')) ?>" class="form-grid">
+                <?= csrf_field() ?>
+                <input type="hidden" name="return_to" value="central_request">
+                <input type="hidden" name="central_request_id" value="<?= e($editRequest['id']) ?>">
+                <input type="hidden" name="company_id" value="<?= e($editRequest['company_id']) ?>">
+                <label>Görüşme tarihi <input type="date" name="interaction_date" value="<?= e(date('Y-m-d')) ?>"></label>
+                <label>Görüşme türü
+                    <select name="type"><?php foreach (interaction_types() as $type): ?><option value="<?= e($type) ?>"><?= e($type) ?></option><?php endforeach; ?></select>
+                </label>
+                <label>Görüşme sonucu
+                    <select name="result"><?php foreach ($centralInteractionResults as $result): ?><option value="<?= e($result) ?>"><?= e($result) ?></option><?php endforeach; ?></select>
+                </label>
+                <label>Sonraki takip tarihi <input type="date" name="next_followup_date"></label>
+                <label class="wide">Görüşme notu <textarea name="note" placeholder="Arama sonucu, talep, itiraz veya sonraki aksiyon"></textarea></label>
+                <div class="actions wide"><button class="btn primary" type="submit">Görüşmeyi kaydet</button></div>
+            </form>
+            <?php else: ?>
+                <p class="empty-state">Görüşme eklemek için önce talebe atanmış bir cari seçin.</p>
+            <?php endif; ?>
+        </article>
+        <article class="panel">
+            <div class="section-title"><h2>Talep geçmişi</h2><span class="muted"><?= e(count($historyItems)) ?> kayıt</span></div>
+            <div class="central-history">
+                <?php foreach ($historyItems as $item): ?>
+                    <article>
+                        <strong><?= e($item['title']) ?></strong>
+                        <small><?= e($item['meta']) ?> · <?= e($item['time']) ?></small>
+                        <?php if ($item['note'] !== ''): ?><p><?= e($item['note']) ?></p><?php endif; ?>
+                    </article>
+                <?php endforeach; ?>
+                <?php if (!$historyItems): ?><p class="empty-state">Henüz geçmiş kaydı yok.</p><?php endif; ?>
+            </div>
+        </article>
+    </section>
+    <?php endif; ?>
+
+    <?php filter_bar('central_requests', [
+        'request_type' => ['_label' => 'Talep türü', 'items' => $requestTypes],
+        'status' => ['_label' => 'Durum', 'items' => $requestStatuses],
+    ], false); ?>
+
+    <section class="panel">
+        <div class="section-title"><h2>Merkez talep listesi</h2><span class="muted"><?= e(count($centralRequests)) ?> görünür kayıt</span></div>
+        <div class="table-wrap"><table class="central-requests-table">
+            <thead><tr><th>Talep</th><th>Atanan cari</th><th>İlgili personel</th><th>İletişim</th><th>Durum</th><th>Aksiyon</th></tr></thead>
+            <tbody>
+            <?php foreach ($centralRequests as $request): ?>
+                <tr>
+                    <td data-label="Talep"><strong><?= e($request['requester_name']) ?></strong><small><?= e($request['request_type'] . ' · ' . ($request['product_interest'] ?: 'Ürün belirtilmedi')) ?></small></td>
+                    <td data-label="Atanan cari"><?= e($request['company_name'] ?: '-') ?></td>
+                    <td data-label="İlgili personel"><?= e($request['assigned_to_name'] ?? '-') ?><small><?= e(role_label($request['assigned_to_role'] ?? '')) ?></small></td>
+                    <td data-label="İletişim"><?= e($request['phone'] ?: '-') ?><small><?= e(trim(($request['city'] ?: '') . ' ' . ($request['district'] ?: '')) ?: ($request['email'] ?: '-')) ?></small></td>
+                    <td data-label="Durum"><span class="badge soft"><?= e($request['status']) ?></span></td>
+                    <td data-label="Aksiyon"><a class="btn small" href="<?= e(app_url('central_requests', ['id' => $request['id']])) ?>">Aç</a></td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table></div>
+        <?php if (!$centralRequests): ?><p class="empty-state">Bu filtrelerle merkez talebi yok.</p><?php endif; ?>
+    </section>
+
+    <?php if ($usingSqlCustomerPicker): ?>
+        <dialog class="modal sql-customer-dialog" id="sql-customer-dialog" data-search-url="<?= e(app_url('sql_customer_search')) ?>">
+            <div class="modal-head">
+                <h2>SQL cariden seç</h2>
+                <button class="btn small" type="button" data-close-dialog>Kapat</button>
+            </div>
+            <div class="modal-body sql-customer-search">
+                <div class="sql-search-row">
+                    <input type="search" data-sql-customer-query placeholder="Cari adı veya vergi no ara..." autocomplete="off">
+                    <button class="btn primary" type="button" data-sql-customer-search>Ara</button>
+                </div>
+                <div class="sql-customer-results" data-sql-customer-results>Arama için en az 2 karakter yazın.</div>
+            </div>
+        </dialog>
+    <?php endif; ?>
     <?php
     render_footer();
     exit;
