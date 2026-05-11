@@ -3126,6 +3126,85 @@ dialog.modal::backdrop {
     white-space: nowrap;
 }
 
+.page-dashboard .dashboard-list-card .mini-card .task-card-meta {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    white-space: normal;
+}
+
+.page-dashboard .dashboard-list-card .mini-card .task-card-meta > span:last-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.task-scope-chip {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    min-height: 22px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: #eaf3ff;
+    color: #07509a;
+    font-size: 11px;
+    font-weight: 850;
+    line-height: 1;
+}
+
+.task-scope-chip.scope-self,
+.dashboard-scope-summary .scope-self {
+    background: #e9f8f1;
+    color: #116b4a;
+}
+
+.task-scope-chip.scope-assigned,
+.dashboard-scope-summary .scope-assigned {
+    background: #eaf3ff;
+    color: #07509a;
+}
+
+.task-scope-chip.scope-delegated,
+.dashboard-scope-summary .scope-delegated {
+    background: #fff4d8;
+    color: #8a5a00;
+}
+
+.task-scope-chip.scope-team,
+.dashboard-scope-summary .scope-team {
+    background: #f1f4f8;
+    color: #41526d;
+}
+
+.dashboard-scope-summary {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    margin: 2px 0 10px;
+}
+
+.dashboard-scope-summary span {
+    min-width: 0;
+    padding: 7px 8px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1.15;
+}
+
+.dashboard-scope-summary strong {
+    margin-right: 5px;
+    font-size: 14px;
+}
+
+.user-task-dashboard-grid {
+    grid-template-columns: repeat(3, minmax(220px, 1fr));
+    margin-bottom: 18px;
+}
+
 .reminder-list {
     display: grid;
     gap: 10px;

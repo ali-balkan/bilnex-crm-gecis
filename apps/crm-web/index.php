@@ -89,6 +89,36 @@ function dashboard_card(string $label, $value, string $hint = '', string $tone =
     echo '</' . $tag . '>';
 }
 
+function task_scope_breakdown_hint(array $breakdown): string
+{
+    return 'Kendi ' . (int) ($breakdown['self'] ?? 0)
+        . ' · Bana ' . (int) ($breakdown['assigned_to_me'] ?? 0)
+        . ' · Atadığım ' . (int) ($breakdown['assigned_by_me'] ?? 0)
+        . ' · Ekip ' . (int) ($breakdown['team'] ?? 0);
+}
+
+function render_task_scope_summary(array $breakdown): void
+{
+    $items = [
+        'scope-self' => ['Kendi takibim', (int) ($breakdown['self'] ?? 0)],
+        'scope-assigned' => ['Bana atanan', (int) ($breakdown['assigned_to_me'] ?? 0)],
+        'scope-delegated' => ['Ben atadım', (int) ($breakdown['assigned_by_me'] ?? 0)],
+        'scope-team' => ['Ekip işi', (int) ($breakdown['team'] ?? 0)],
+    ];
+
+    echo '<div class="dashboard-scope-summary">';
+    foreach ($items as $class => [$label, $value]) {
+        echo '<span class="' . e($class) . '"><strong>' . e($value) . '</strong>' . e($label) . '</span>';
+    }
+    echo '</div>';
+}
+
+function task_scope_chip(array $task, int $viewerId): string
+{
+    $relation = task_relation_info($task, $viewerId);
+    return '<span class="task-scope-chip ' . e($relation['class']) . '">' . e($relation['label']) . '</span>';
+}
+
 function render_tax_office_picker_field(string $taxOffice = '', string $taxOfficeCode = ''): void
 {
     $label = $taxOffice !== '' ? $taxOffice . ($taxOfficeCode !== '' ? ' (' . $taxOfficeCode . ')' : '') : 'Vergi dairesi seçin';
@@ -1804,6 +1834,7 @@ if ($page === 'dashboard') {
     $monthStart = date('Y-m-01');
     $monthEnd = date('Y-m-t');
     $dashboardMonthParams = [':month_start' => $monthStart, ':month_end' => $monthEnd];
+    $dashboardCurrentUserId = (int) current_user()['id'];
     if (can_view_all()) {
         [$dashboardOppScopeSql, $dashboardOppScopeParams] = opportunity_visibility_condition('o');
         [$dashboardInteractionScopeSql, $dashboardInteractionScopeParams] = interaction_visibility_condition('i');
@@ -1820,8 +1851,12 @@ if ($page === 'dashboard') {
             $allCompanyCount = scalar('SELECT COUNT(*) FROM companies c WHERE 1 = 1' . $dashboardCompanyScopeSql, $dashboardCompanyScopeParams);
         }
         [$dashboardTaskScopeSql, $dashboardTaskScopeParams] = task_visibility_condition('t');
-        $dashboardOpenTaskCount = scalar("SELECT COUNT(*) FROM tasks t WHERE t.status = 'Açık'{$dashboardTaskScopeSql} AND t.due_date IS NOT NULL AND date(t.due_date) BETWEEN :month_start AND :month_end", $dashboardTaskScopeParams + $dashboardMonthParams);
-        $dashboardOverdueTaskCount = scalar("SELECT COUNT(*) FROM tasks t WHERE t.status = 'Açık'{$dashboardTaskScopeSql} AND t.due_date IS NOT NULL AND date(t.due_date) BETWEEN :month_start AND :month_end AND date(t.due_date) < :today", $dashboardTaskScopeParams + $dashboardMonthParams + [':today' => $today]);
+        $dashboardOpenTaskWhere = "t.status = 'Açık'{$dashboardTaskScopeSql} AND t.due_date IS NOT NULL AND date(t.due_date) BETWEEN :month_start AND :month_end";
+        $dashboardOverdueTaskWhere = $dashboardOpenTaskWhere . ' AND date(t.due_date) < :today';
+        $dashboardOpenTaskBreakdown = task_scope_breakdown($dashboardOpenTaskWhere, $dashboardTaskScopeParams + $dashboardMonthParams, $dashboardCurrentUserId);
+        $dashboardOverdueTaskBreakdown = task_scope_breakdown($dashboardOverdueTaskWhere, $dashboardTaskScopeParams + $dashboardMonthParams + [':today' => $today], $dashboardCurrentUserId);
+        $dashboardOpenTaskCount = $dashboardOpenTaskBreakdown['total'];
+        $dashboardOverdueTaskCount = $dashboardOverdueTaskBreakdown['total'];
         $openOpportunityCount = scalar('SELECT COUNT(*) FROM opportunities o WHERE o.stage NOT IN ("Kazanıldı", "Kaybedildi") AND date(o.expected_close_date) BETWEEN :month_start AND :month_end' . $dashboardOppScopeSql, $dashboardOppScopeParams + $dashboardMonthParams);
         $cards = [
             ['Görüşmeler', $monthlyInteractionCount, 'Bu ay', 'stat-blue'],
@@ -1844,7 +1879,7 @@ if ($page === 'dashboard') {
         }
         echo '</section>';
 
-        $dashboardTasks = rows("SELECT t.*, assigner.full_name assigned_by_name, assignee.full_name assigned_to_name FROM tasks t LEFT JOIN users assigner ON assigner.id = t.assigned_by LEFT JOIN users assignee ON assignee.id = t.assigned_to WHERE t.status = 'Açık'{$dashboardTaskScopeSql} ORDER BY COALESCE(t.due_date, '9999-12-31'), t.created_at DESC LIMIT 3", $dashboardTaskScopeParams);
+        $dashboardTasks = rows("SELECT t.*, assigner.full_name assigned_by_name, assignee.full_name assigned_to_name FROM tasks t LEFT JOIN users assigner ON assigner.id = t.assigned_by LEFT JOIN users assignee ON assignee.id = t.assigned_to WHERE t.status = 'Açık'{$dashboardTaskScopeSql} AND (t.due_date IS NULL OR date(t.due_date) >= :today) ORDER BY COALESCE(t.due_date, '9999-12-31'), t.created_at DESC LIMIT 3", $dashboardTaskScopeParams + [':today' => $today]);
 
         if (company_source() === 'sqlserver') {
             $statusRows = array_map(static function (array $row): array {
@@ -1901,17 +1936,19 @@ if ($page === 'dashboard') {
         echo '<section class="dashboard-list-grid">';
         echo '<article class="panel dashboard-list-card"><div class="section-title"><h2>Yaklaşan Görevler</h2><a class="btn small" href="' . e(app_url('followups')) . '">Tüm Görevler</a></div><div class="mini-card-list">';
         foreach ($dashboardTasks as $task) {
-            echo '<a class="mini-card" href="' . e(app_url('followups')) . '"><strong>' . e($task['title']) . '</strong><span>Atayan: ' . e($task['assigned_by_name'] ?: '-') . ' · Atanan: ' . e($task['assigned_to_name'] ?: '-') . '</span><small>Termin: ' . e($task['due_date'] ?: '-') . '</small></a>';
+            echo '<a class="mini-card" href="' . e(app_url('followups')) . '"><strong>' . e($task['title']) . '</strong><span class="task-card-meta">' . task_scope_chip($task, $dashboardCurrentUserId) . '<span>Atayan: ' . e($task['assigned_by_name'] ?: '-') . ' · Atanan: ' . e($task['assigned_to_name'] ?: '-') . '</span></span><small>Termin: ' . e($task['due_date'] ?: '-') . '</small></a>';
         }
         if (!$dashboardTasks) {
             echo '<p class="muted">Açık görev yok.</p>';
         }
         echo '</div></article>';
 
-        echo '<article class="panel dashboard-list-card"><div class="section-title"><h2>Geciken Görevler</h2><a class="btn small" href="' . e(app_url('followups', ['date_filter' => 'custom', 'date_to' => $today])) . '">Tüm Gecikenler</a></div><div class="mini-card-list">';
+        echo '<article class="panel dashboard-list-card"><div class="section-title"><h2>Geciken Görevler</h2><a class="btn small" href="' . e(app_url('followups', ['date_filter' => 'custom', 'date_to' => $today, 'status' => 'Açık'])) . '">Tüm Gecikenler</a></div>';
+        render_task_scope_summary($dashboardOverdueTaskBreakdown);
+        echo '<div class="mini-card-list">';
         foreach ($overdueTasks as $task) {
             $taskHref = app_url('followups', ['edit_task' => $task['id']]);
-            echo '<a class="mini-card late" href="' . e($taskHref) . '"><strong>' . e($task['title']) . '</strong><span>' . e($task['company_name'] ?: 'Cari seçilmedi') . ' · Atanan: ' . e($task['assigned_to_name'] ?: '-') . '</span><small>Termin: ' . e($task['due_date']) . '</small></a>';
+            echo '<a class="mini-card late" href="' . e($taskHref) . '"><strong>' . e($task['title']) . '</strong><span class="task-card-meta">' . task_scope_chip($task, $dashboardCurrentUserId) . '<span>' . e($task['company_name'] ?: 'Cari seçilmedi') . ' · Atanan: ' . e($task['assigned_to_name'] ?: '-') . '</span></span><small>Termin: ' . e($task['due_date']) . '</small></a>';
         }
         if (!$overdueTasks) {
             echo '<p class="muted">Geciken görev yok.</p>';
@@ -1928,13 +1965,18 @@ if ($page === 'dashboard') {
         echo '</div></article>';
 
         echo '<article class="panel dashboard-list-card"><div class="section-title"><h2>Hatırlatmalar</h2><a class="btn small" href="' . e(app_url('reports')) . '">Raporlar</a></div><div class="reminder-list">';
-        echo '<a href="' . e(app_url('followups', ['status' => 'Açık'])) . '"><strong>' . e($dashboardOpenTaskCount) . '</strong><span>açık görev takip bekliyor</span></a>';
-        echo '<a href="' . e(app_url('followups', ['date_filter' => 'custom', 'date_to' => $today, 'status' => 'Açık'])) . '"><strong>' . e($dashboardOverdueTaskCount) . '</strong><span>görev gecikmiş görünüyor</span></a>';
+        echo '<a href="' . e(app_url('followups', ['status' => 'Açık'])) . '"><strong>' . e($dashboardOpenTaskCount) . '</strong><span>bu ay açık görev takip bekliyor</span></a>';
+        echo '<a href="' . e(app_url('followups', ['date_filter' => 'custom', 'date_to' => $today, 'status' => 'Açık'])) . '"><strong>' . e($dashboardOverdueTaskCount) . '</strong><span>geciken: ' . e(task_scope_breakdown_hint($dashboardOverdueTaskBreakdown)) . '</span></a>';
         echo '<a href="' . e(app_url('opportunities', ['stage_group' => 'open'])) . '"><strong>' . e($openOpportunityCount) . '</strong><span>açık satış fırsatı var</span></a>';
         echo '</div></article>';
         echo '</section>';
     } else {
         $uid = current_user()['id'];
+        $myOpenTaskBreakdown = task_scope_breakdown(
+            "t.status = 'Açık' AND (t.assigned_by = :dashboard_user_id OR t.assigned_to = :dashboard_user_id)",
+            [':dashboard_user_id' => $uid],
+            (int) $uid
+        );
         $myPipeline = rows('SELECT stage, COUNT(*) total, COALESCE(SUM(estimated_amount), 0) amount FROM opportunities WHERE salesperson_id = :uid GROUP BY stage ORDER BY total DESC', [':uid' => $uid]);
         $myTrend = complete_daily_trend(
             rows('SELECT date(interaction_date) day, COUNT(*) total FROM interactions WHERE user_id = :uid AND date(interaction_date) >= date(:today, "-6 day") GROUP BY date(interaction_date) ORDER BY day', [':uid' => $uid, ':today' => $today]),
@@ -1948,8 +1990,9 @@ if ($page === 'dashboard') {
         $myOpenOpps = rows('SELECT o.id, o.company_id, o.product_service, o.estimated_amount, o.stage, o.expected_close_date, c.name company_name FROM opportunities o JOIN companies c ON c.id = o.company_id WHERE o.salesperson_id = :uid AND o.stage NOT IN ("Kazanıldı", "Kaybedildi") ORDER BY COALESCE(o.expected_close_date, "9999-12-31"), o.estimated_amount DESC LIMIT 3', [':uid' => $uid]);
         $lastInteraction = scalar('SELECT MAX(interaction_date) FROM interactions WHERE user_id = :uid', [':uid' => $uid]);
         $cards = [
-            ['Bana atanan işler', scalar("SELECT COUNT(*) FROM tasks WHERE assigned_to = :uid AND status = 'Açık'", [':uid' => $uid])],
-            ['Atadığım işler', scalar("SELECT COUNT(*) FROM tasks WHERE assigned_by = :uid AND status = 'Açık'", [':uid' => $uid])],
+            ['Kendi takiplerim', $myOpenTaskBreakdown['self']],
+            ['Bana atanan işler', $myOpenTaskBreakdown['assigned_to_me']],
+            ['Atadığım işler', $myOpenTaskBreakdown['assigned_by_me']],
             ['Açık fırsatlarım', scalar('SELECT COUNT(*) FROM opportunities WHERE salesperson_id = :uid AND stage NOT IN ("Kazanıldı", "Kaybedildi")', [':uid' => $uid])],
             ['Bu ay görüşmelerim', scalar('SELECT COUNT(*) FROM interactions WHERE user_id = :uid AND date(interaction_date) >= :month', [':uid' => $uid, ':month' => $monthStart])],
         ];
@@ -1961,20 +2004,29 @@ if ($page === 'dashboard') {
         echo '<a class="btn" href="' . e(app_url('followups')) . '">İş listesi</a>';
         echo '<a class="btn" href="' . e(app_url('opportunity_form')) . '">Yeni fırsat</a>';
         echo '</div></section>';
-        $assignedToMe = rows("SELECT t.*, u.full_name assigned_by_name FROM tasks t LEFT JOIN users u ON u.id = t.assigned_by WHERE t.assigned_to = :uid AND t.status = 'Açık' ORDER BY COALESCE(t.due_date, '9999-12-31'), t.created_at DESC LIMIT 3", [':uid' => $uid]);
-        $assignedByMe = rows("SELECT t.*, u.full_name assigned_to_name FROM tasks t LEFT JOIN users u ON u.id = t.assigned_to WHERE t.assigned_by = :uid AND t.status = 'Açık' ORDER BY COALESCE(t.due_date, '9999-12-31'), t.created_at DESC LIMIT 3", [':uid' => $uid]);
-        echo '<section class="grid-two">';
-        echo '<article class="panel focus-card"><div class="section-title"><h2>Bana atanan işler</h2><a class="btn small" href="' . e(app_url('followups')) . '">Aç</a></div><div class="mini-card-list">';
+        $ownTasks = rows("SELECT t.* FROM tasks t WHERE t.assigned_by = :uid AND t.assigned_to = :uid AND t.status = 'Açık' ORDER BY COALESCE(t.due_date, '9999-12-31'), t.created_at DESC LIMIT 3", [':uid' => $uid]);
+        $assignedToMe = rows("SELECT t.*, u.full_name assigned_by_name FROM tasks t LEFT JOIN users u ON u.id = t.assigned_by WHERE t.assigned_to = :uid AND (t.assigned_by IS NULL OR t.assigned_by <> :uid) AND t.status = 'Açık' ORDER BY COALESCE(t.due_date, '9999-12-31'), t.created_at DESC LIMIT 3", [':uid' => $uid]);
+        $assignedByMe = rows("SELECT t.*, u.full_name assigned_to_name FROM tasks t LEFT JOIN users u ON u.id = t.assigned_to WHERE t.assigned_by = :uid AND (t.assigned_to IS NULL OR t.assigned_to <> :uid) AND t.status = 'Açık' ORDER BY COALESCE(t.due_date, '9999-12-31'), t.created_at DESC LIMIT 3", [':uid' => $uid]);
+        echo '<section class="dashboard-list-grid user-task-dashboard-grid">';
+        echo '<article class="panel dashboard-list-card"><div class="section-title"><h2>Kendi takiplerim</h2><a class="btn small" href="' . e(app_url('followups', ['task_scope' => 'user:' . $uid])) . '">Aç</a></div><div class="mini-card-list">';
+        foreach ($ownTasks as $task) {
+            echo '<a class="mini-card" href="' . e(app_url('followups')) . '"><strong>' . e($task['title']) . '</strong><span class="task-card-meta">' . task_scope_chip($task, (int) $uid) . '<span>Benim açtığım takip</span></span><small>Termin: ' . e($task['due_date'] ?: '-') . '</small></a>';
+        }
+        if (!$ownTasks) {
+            echo '<p class="muted">Kendi açtığın açık takip yok.</p>';
+        }
+        echo '</div></article>';
+        echo '<article class="panel dashboard-list-card"><div class="section-title"><h2>Bana atanan işler</h2><a class="btn small" href="' . e(app_url('followups')) . '">Aç</a></div><div class="mini-card-list">';
         foreach ($assignedToMe as $task) {
-            echo '<a class="mini-card" href="' . e(app_url('followups')) . '"><strong>' . e($task['title']) . '</strong><span>Atayan: ' . e($task['assigned_by_name']) . '</span><small>Termin: ' . e($task['due_date'] ?: '-') . '</small></a>';
+            echo '<a class="mini-card" href="' . e(app_url('followups')) . '"><strong>' . e($task['title']) . '</strong><span class="task-card-meta">' . task_scope_chip($task, (int) $uid) . '<span>Atayan: ' . e($task['assigned_by_name'] ?: '-') . '</span></span><small>Termin: ' . e($task['due_date'] ?: '-') . '</small></a>';
         }
         if (!$assignedToMe) {
             echo '<p class="muted">Bana atanmış açık iş yok.</p>';
         }
         echo '</div></article>';
-        echo '<article class="panel focus-card"><div class="section-title"><h2>Atadığım işler</h2><a class="btn small" href="' . e(app_url('followups')) . '">Aç</a></div><div class="mini-card-list">';
+        echo '<article class="panel dashboard-list-card"><div class="section-title"><h2>Atadığım işler</h2><a class="btn small" href="' . e(app_url('followups')) . '">Aç</a></div><div class="mini-card-list">';
         foreach ($assignedByMe as $task) {
-            echo '<a class="mini-card" href="' . e(app_url('followups')) . '"><strong>' . e($task['title']) . '</strong><span>Atanan: ' . e($task['assigned_to_name']) . '</span><small>Termin: ' . e($task['due_date'] ?: '-') . '</small></a>';
+            echo '<a class="mini-card" href="' . e(app_url('followups')) . '"><strong>' . e($task['title']) . '</strong><span class="task-card-meta">' . task_scope_chip($task, (int) $uid) . '<span>Atanan: ' . e($task['assigned_to_name'] ?: '-') . '</span></span><small>Termin: ' . e($task['due_date'] ?: '-') . '</small></a>';
         }
         if (!$assignedByMe) {
             echo '<p class="muted">Atadığım açık iş yok.</p>';

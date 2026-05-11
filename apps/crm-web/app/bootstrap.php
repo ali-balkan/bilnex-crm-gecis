@@ -1064,6 +1064,59 @@ function task_visibility_condition(string $alias = 't'): array
     return [' AND (' . implode(' OR ', $conditions) . ')', $params];
 }
 
+function task_relation_info(array $task, ?int $viewerId = null): array
+{
+    $viewerId = $viewerId ?? (int) (current_user()['id'] ?? 0);
+    $assignedBy = (int) ($task['assigned_by'] ?? 0);
+    $assignedTo = (int) ($task['assigned_to'] ?? 0);
+
+    if ($viewerId > 0 && $assignedBy === $viewerId && $assignedTo === $viewerId) {
+        return ['label' => 'Kendi takibim', 'class' => 'scope-self'];
+    }
+    if ($viewerId > 0 && $assignedTo === $viewerId) {
+        return ['label' => 'Bana atandı', 'class' => 'scope-assigned'];
+    }
+    if ($viewerId > 0 && $assignedBy === $viewerId) {
+        return ['label' => 'Ben atadım', 'class' => 'scope-delegated'];
+    }
+
+    return ['label' => 'Ekip işi', 'class' => 'scope-team'];
+}
+
+function task_scope_breakdown(string $whereSql, array $params = [], ?int $viewerId = null): array
+{
+    $viewerId = $viewerId ?? (int) (current_user()['id'] ?? 0);
+    if ($viewerId <= 0) {
+        return ['total' => 0, 'self' => 0, 'assigned_to_me' => 0, 'assigned_by_me' => 0, 'team' => 0];
+    }
+
+    $whereSql = trim($whereSql);
+    if ($whereSql === '') {
+        $whereSql = '1 = 1';
+    }
+
+    $stmt = db()->prepare("
+        SELECT
+            COUNT(*) total,
+            COALESCE(SUM(CASE WHEN t.assigned_by = :task_scope_viewer_id AND t.assigned_to = :task_scope_viewer_id THEN 1 ELSE 0 END), 0) self,
+            COALESCE(SUM(CASE WHEN t.assigned_to = :task_scope_viewer_id AND (t.assigned_by IS NULL OR t.assigned_by <> :task_scope_viewer_id) THEN 1 ELSE 0 END), 0) assigned_to_me,
+            COALESCE(SUM(CASE WHEN t.assigned_by = :task_scope_viewer_id AND (t.assigned_to IS NULL OR t.assigned_to <> :task_scope_viewer_id) THEN 1 ELSE 0 END), 0) assigned_by_me,
+            COALESCE(SUM(CASE WHEN (t.assigned_by IS NULL OR t.assigned_by <> :task_scope_viewer_id) AND (t.assigned_to IS NULL OR t.assigned_to <> :task_scope_viewer_id) THEN 1 ELSE 0 END), 0) team
+        FROM tasks t
+        WHERE {$whereSql}
+    ");
+    $stmt->execute($params + [':task_scope_viewer_id' => $viewerId]);
+    $row = $stmt->fetch() ?: [];
+
+    return [
+        'total' => (int) ($row['total'] ?? 0),
+        'self' => (int) ($row['self'] ?? 0),
+        'assigned_to_me' => (int) ($row['assigned_to_me'] ?? 0),
+        'assigned_by_me' => (int) ($row['assigned_by_me'] ?? 0),
+        'team' => (int) ($row['team'] ?? 0),
+    ];
+}
+
 function opportunity_visibility_condition(string $alias = 'o'): array
 {
     $roles = task_visible_roles_for_current_user();
