@@ -1387,6 +1387,11 @@ input[list] {
     box-shadow: 0 4px 12px rgba(6, 33, 72, .08);
 }
 
+.task-view-switch {
+    width: max-content;
+    margin: 0 0 12px auto;
+}
+
 .filters {
     display: grid;
     grid-template-columns: minmax(240px, 1.35fr) repeat(auto-fit, minmax(150px, 1fr));
@@ -2072,6 +2077,86 @@ dialog.modal::backdrop {
     line-height: 1.35;
 }
 
+.task-calendar-panel {
+    overflow: hidden;
+}
+
+.compact-task-calendar {
+    box-shadow: 0 8px 22px rgba(6, 33, 72, .05);
+}
+
+.compact-task-calendar .calendar-weekday {
+    padding: 8px 9px;
+}
+
+.compact-task-calendar .calendar-day {
+    min-height: 106px;
+    max-height: 128px;
+    overflow: hidden;
+    padding: 8px;
+}
+
+.calendar-day-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.calendar-day-head strong {
+    margin: 0;
+}
+
+.calendar-day-head span {
+    min-width: 22px;
+    min-height: 22px;
+    display: inline-grid;
+    place-items: center;
+    border-radius: 999px;
+    background: #e8f4ff;
+    color: var(--primary-dark);
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.compact-task-calendar .calendar-task {
+    gap: 2px;
+    margin-bottom: 4px;
+    padding: 5px 7px;
+    text-decoration: none;
+}
+
+.compact-task-calendar .calendar-task.completed-task {
+    opacity: .68;
+    background: #f3f7fb;
+}
+
+.compact-task-calendar .calendar-task span,
+.compact-task-calendar .calendar-task small {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.calendar-more-link {
+    display: block;
+    margin-top: 3px;
+    padding: 4px 6px;
+    border-radius: 6px;
+    background: #fff7df;
+    color: #8a5b00;
+    font-size: 11px;
+    font-weight: 900;
+    text-align: center;
+    text-decoration: none;
+}
+
+.calendar-more-link:hover {
+    color: #5d3d00;
+    text-decoration: none;
+}
+
 .calendar-complete {
     display: grid;
     gap: 5px;
@@ -2286,6 +2371,22 @@ dialog.modal::backdrop {
 .task-table th:nth-child(6) { width: 95px; }
 .task-table th:nth-child(7) { width: 250px; }
 
+.followup-task-table-wrap {
+    overflow-x: hidden;
+}
+
+.followup-task-table {
+    width: 100%;
+    min-width: 0;
+}
+
+.followup-task-table th:nth-child(1) { width: 25%; }
+.followup-task-table th:nth-child(2) { width: 17%; }
+.followup-task-table th:nth-child(3) { width: 20%; }
+.followup-task-table th:nth-child(4) { width: 10%; }
+.followup-task-table th:nth-child(5) { width: 8%; }
+.followup-task-table th:nth-child(6) { width: 20%; }
+
 .task-table td {
     padding-block: 9px;
     vertical-align: middle;
@@ -2316,6 +2417,17 @@ dialog.modal::backdrop {
     display: block;
 }
 
+.followup-task-table .task-context,
+.followup-task-table .task-title-cell strong,
+.followup-task-table .task-title-cell small,
+.followup-task-table .task-people-cell strong,
+.followup-task-table .task-people-cell small {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .task-title-cell strong,
 .task-table td {
     white-space: nowrap;
@@ -2330,6 +2442,12 @@ dialog.modal::backdrop {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.followup-task-table td {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
 }
 
 .task-actions-cell {
@@ -2352,6 +2470,26 @@ dialog.modal::backdrop {
 .task-actions-cell .task-complete-form input {
     width: 132px;
     min-height: 32px;
+}
+
+.followup-task-table .task-actions-cell {
+    white-space: normal;
+}
+
+.followup-task-table .task-actions-cell > .btn {
+    margin-bottom: 5px;
+}
+
+.followup-task-table .task-actions-cell .task-complete-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px;
+}
+
+.followup-task-table .task-actions-cell .task-complete-form input {
+    width: 100%;
+    min-width: 0;
 }
 
 .task-actions-cell .btn {

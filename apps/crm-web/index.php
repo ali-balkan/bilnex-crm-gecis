@@ -3162,6 +3162,7 @@ if ($page === 'followups') {
     }
     $allowedTaskUserIds = array_map(static fn($user) => (int) $user['id'], $taskScopeUsers);
     $requestedTaskScope = trim((string) ($_GET['task_scope'] ?? ''));
+    $taskView = (string) ($_GET['view'] ?? 'list') === 'calendar' ? 'calendar' : 'list';
     if ($requestedTaskScope === '') {
         if (!empty($_GET['task_role'])) {
             $requestedTaskScope = 'role:' . normalize_role($_GET['task_role']);
@@ -3243,6 +3244,7 @@ if ($page === 'followups') {
             $taskFilterQuery[$filterName] = $_GET[$filterName];
         }
     }
+    $taskFilterQuery['view'] = $taskView;
     $visibleTaskRoleOptions = [];
     foreach ($taskRoleOptions as $roleValue => $roleLabel) {
         if (array_key_exists($roleValue, $taskScopeRoles)) {
@@ -3360,6 +3362,7 @@ if ($page === 'followups') {
                     <input type="hidden" name="date_filter" value="<?= e($_GET['date_filter'] ?? '') ?>">
                     <input type="hidden" name="date_from" value="<?= e($_GET['date_from'] ?? '') ?>">
                     <input type="hidden" name="date_to" value="<?= e($_GET['date_to'] ?? '') ?>">
+                    <input type="hidden" name="view" value="<?= e($taskView) ?>">
                     <label>Görünürlük filtresi
                         <select name="task_scope" onchange="this.form.submit()">
                             <?php foreach ($taskScopeFilterOptions as $scopeValue => $scopeLabel): ?>
@@ -3405,25 +3408,112 @@ if ($page === 'followups') {
             $listParams[':status'] = $_GET['status'];
         }
         apply_date_filter($listWhere, $listParams, 't.due_date', $_GET);
+        $followupFilterHidden = ['view' => $taskView];
+        if ($taskView === 'calendar' && !empty($_GET['month'])) {
+            $followupFilterHidden['month'] = (string) $_GET['month'];
+        }
         filter_bar('followups', [
             'task_scope' => ['_label' => 'Görünürlük', '_selected' => $selectedTaskScopeValue, 'items' => $taskScopeFilterOptions],
             'status' => ['_label' => 'Durum', 'items' => array_combine(task_statuses(), task_statuses())],
-        ], true);
+        ], true, $followupFilterHidden);
         $items = rows("SELECT t.*, c.name company_name, c.account_code company_account_code, assigner.full_name assigned_by_name, assignee.full_name assigned_to_name, assigner.role assigned_by_role, assignee.role assigned_to_role FROM tasks t LEFT JOIN companies c ON c.id = t.company_id LEFT JOIN users assigner ON assigner.id = t.assigned_by LEFT JOIN users assignee ON assignee.id = t.assigned_to {$listWhere} ORDER BY CASE t.status WHEN 'Açık' THEN 0 ELSE 1 END, CASE WHEN t.due_date IS NOT NULL AND date(t.due_date) < :sort_today AND t.status = 'Açık' THEN 0 ELSE 1 END, COALESCE(t.due_date, '9999-12-31'), t.created_at DESC", $listParams + [':sort_today' => $today]);
+
+        $calendarMonthInput = (string) ($_GET['month'] ?? date('Y-m'));
+        if (!preg_match('/^\d{4}-\d{2}$/', $calendarMonthInput)) {
+            $calendarMonthInput = date('Y-m');
+        }
+        $calendarMonthStart = DateTimeImmutable::createFromFormat('!Y-m-d', $calendarMonthInput . '-01') ?: new DateTimeImmutable('first day of this month');
+        $calendarStart = $calendarMonthStart->modify('monday this week');
+        $calendarEnd = $calendarMonthStart->modify('last day of this month')->modify('sunday this week');
+        $calendarPrevMonth = $calendarMonthStart->modify('-1 month')->format('Y-m');
+        $calendarNextMonth = $calendarMonthStart->modify('+1 month')->format('Y-m');
+        $calendarWhere = $scopeWhere . $taskFilterWhere . ' AND t.due_date IS NOT NULL AND date(t.due_date) BETWEEN :calendar_start AND :calendar_end';
+        $calendarParams = $taskScopeParams + $taskFilterParams + [
+            ':calendar_start' => $calendarStart->format('Y-m-d'),
+            ':calendar_end' => $calendarEnd->format('Y-m-d'),
+        ];
+        if (!empty($_GET['q'])) {
+            $calendarWhere .= ' AND (t.title LIKE :calendar_q OR t.description LIKE :calendar_q OR c.name LIKE :calendar_q OR CAST(t.sql_customer_id AS TEXT) LIKE :calendar_q OR assigner.full_name LIKE :calendar_q OR assignee.full_name LIKE :calendar_q)';
+            $calendarParams[':calendar_q'] = '%' . $_GET['q'] . '%';
+        }
+        if (!empty($_GET['status'])) {
+            $calendarWhere .= ' AND t.status = :calendar_status';
+            $calendarParams[':calendar_status'] = $_GET['status'];
+        }
+        $calendarTasks = $taskView === 'calendar'
+            ? rows("SELECT t.*, c.name company_name, assigner.full_name assigned_by_name, assignee.full_name assigned_to_name FROM tasks t LEFT JOIN companies c ON c.id = t.company_id LEFT JOIN users assigner ON assigner.id = t.assigned_by LEFT JOIN users assignee ON assignee.id = t.assigned_to {$calendarWhere} ORDER BY t.due_date, CASE t.status WHEN 'Açık' THEN 0 ELSE 1 END, t.created_at DESC", $calendarParams)
+            : [];
+        $calendarTasksByDate = [];
+        foreach ($calendarTasks as $calendarTask) {
+            $calendarTasksByDate[$calendarTask['due_date']][] = $calendarTask;
+        }
+        $viewParams = $taskFilterQuery;
+        unset($viewParams['view']);
+        $viewParams['task_scope'] = $selectedTaskScopeValue;
     ?>
+    <div class="view-switch task-view-switch" aria-label="Takip görünümü">
+        <a class="<?= e($taskView === 'list' ? 'active' : '') ?>" href="<?= e(app_url('followups', $viewParams + ['view' => 'list'])) ?>">Liste</a>
+        <a class="<?= e($taskView === 'calendar' ? 'active' : '') ?>" href="<?= e(app_url('followups', $viewParams + ['view' => 'calendar', 'month' => $calendarMonthInput])) ?>">Takvim</a>
+    </div>
+    <?php if ($taskView === 'calendar'): ?>
+    <section class="panel task-calendar-panel">
+        <div class="section-title">
+            <h2>İş takvimi</h2>
+            <div class="calendar-actions">
+                <a class="btn small" href="<?= e(app_url('followups', $viewParams + ['view' => 'calendar', 'month' => $calendarPrevMonth])) ?>">Önceki</a>
+                <a class="btn small" href="<?= e(app_url('followups', $viewParams + ['view' => 'calendar', 'month' => date('Y-m')])) ?>">Bu ay</a>
+                <a class="btn small" href="<?= e(app_url('followups', $viewParams + ['view' => 'calendar', 'month' => $calendarNextMonth])) ?>">Sonraki</a>
+            </div>
+        </div>
+        <h3 class="calendar-title"><?= e($calendarMonthStart->format('m.Y')) ?></h3>
+        <div class="task-calendar compact-task-calendar">
+            <?php foreach (['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'] as $dayName): ?>
+                <div class="calendar-weekday"><?= e($dayName) ?></div>
+            <?php endforeach; ?>
+            <?php for ($day = $calendarStart; $day <= $calendarEnd; $day = $day->modify('+1 day')): ?>
+                <?php
+                    $dateKey = $day->format('Y-m-d');
+                    $dayTasks = $calendarTasksByDate[$dateKey] ?? [];
+                    $visibleDayTasks = array_slice($dayTasks, 0, 3);
+                    $hiddenTaskCount = max(0, count($dayTasks) - count($visibleDayTasks));
+                    $dayListParams = array_merge($viewParams, [
+                        'view' => 'list',
+                        'date_filter' => 'custom',
+                        'date_from' => $dateKey,
+                        'date_to' => $dateKey,
+                    ]);
+                ?>
+                <article class="calendar-day <?= $day->format('Y-m') !== $calendarMonthInput ? 'muted-day' : '' ?> <?= $dateKey === date('Y-m-d') ? 'today' : '' ?>">
+                    <div class="calendar-day-head">
+                        <strong><?= e($day->format('d')) ?></strong>
+                        <?php if ($dayTasks): ?><span><?= e(count($dayTasks)) ?></span><?php endif; ?>
+                    </div>
+                    <?php foreach ($visibleDayTasks as $task): ?>
+                        <a class="calendar-task <?= e($task['status'] === 'Tamamlandı' ? 'completed-task' : '') ?>" href="<?= e(app_url('followups', ['edit_task' => $task['id'], 'view' => 'list'])) ?>">
+                            <span><?= e($task['title']) ?></span>
+                            <small><?= e($task['company_name'] ?: 'Cari yok') ?> · <?= e($task['assigned_to_name'] ?: '-') ?></small>
+                        </a>
+                    <?php endforeach; ?>
+                    <?php if ($hiddenTaskCount > 0): ?>
+                        <a class="calendar-more-link" href="<?= e(app_url('followups', $dayListParams)) ?>">Tümü (<?= e(count($dayTasks)) ?>)</a>
+                    <?php endif; ?>
+                </article>
+            <?php endfor; ?>
+        </div>
+    </section>
+    <?php else: ?>
     <section class="panel task-list-panel">
         <div class="section-title">
             <h2>İş listesi</h2>
             <span class="muted"><?= e($openTaskTotal) ?> açık iş · <?= e($taskFilterLabel) ?></span>
         </div>
-        <div class="table-wrap task-table-wrap">
-            <table class="task-table">
+        <div class="table-wrap task-table-wrap followup-task-table-wrap">
+            <table class="task-table followup-task-table">
                 <thead>
                     <tr>
                         <th>İş</th>
                         <th>Cari</th>
-                        <th>Atayan</th>
-                        <th>Atanan</th>
+                        <th>Sorumlular</th>
                         <th>Termin</th>
                         <th>Durum</th>
                         <th>Aksiyon</th>
@@ -3455,17 +3545,19 @@ if ($page === 'followups') {
                     $companyDisplay = $row['company_name'] ?: '-';
                 ?>
                 <tr class="<?= e(implode(' ', $cardClasses)) ?>">
-                    <td class="task-title-cell">
+                    <td class="task-title-cell" data-label="İş">
                         <span class="task-context"><?= e($contextLabel) ?></span>
                         <strong><?= e($row['title']) ?></strong>
                         <?php if ($row['description']): ?><small><?= e($row['description']) ?></small><?php endif; ?>
                     </td>
-                    <td><?= e($companyDisplay) ?></td>
-                    <td><?= e($row['assigned_by_name'] ?? 'Silinmiş kullanıcı') ?><small><?= e(role_label($row['assigned_by_role'] ?? '')) ?></small></td>
-                    <td><?= e($row['assigned_to_name'] ?? 'Silinmiş kullanıcı') ?><small><?= e(role_label($row['assigned_to_role'] ?? '')) ?></small></td>
-                    <td><?= e($row['due_date'] ?: '-') ?><?php if ($isOverdue): ?><span class="badge danger">Gecikmiş</span><?php endif; ?></td>
-                    <td><span class="badge <?= $row['status'] === 'Tamamlandı' ? 'success' : 'soft' ?>"><?= e($row['status']) ?></span></td>
-                    <td class="task-actions-cell">
+                    <td data-label="Cari"><?= e($companyDisplay) ?></td>
+                    <td class="task-people-cell" data-label="Sorumlular">
+                        <strong>Atayan: <?= e($row['assigned_by_name'] ?? 'Silinmiş kullanıcı') ?></strong>
+                        <small>Atanan: <?= e($row['assigned_to_name'] ?? 'Silinmiş kullanıcı') ?></small>
+                    </td>
+                    <td data-label="Termin"><?= e($row['due_date'] ?: '-') ?><?php if ($isOverdue): ?><span class="badge danger">Gecikmiş</span><?php endif; ?></td>
+                    <td data-label="Durum"><span class="badge <?= $row['status'] === 'Tamamlandı' ? 'success' : 'soft' ?>"><?= e($row['status']) ?></span></td>
+                    <td class="task-actions-cell" data-label="Aksiyon">
                         <a class="btn small" href="<?= e(app_url('followups', ['edit_task' => $row['id']])) ?>">Düzenle</a>
                         <?php if ($row['status'] !== 'Tamamlandı' && can_complete_task($row)): ?>
                             <form method="post" action="<?= e(app_url('complete_task')) ?>" class="inline-form task-complete-form">
@@ -3490,6 +3582,7 @@ if ($page === 'followups') {
             <?php endif; ?>
         </div>
     </section>
+    <?php endif; ?>
     <?php
     render_footer();
     exit;
