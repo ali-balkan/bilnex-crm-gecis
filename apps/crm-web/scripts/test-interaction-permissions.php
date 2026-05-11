@@ -18,7 +18,10 @@ function ip_assert(bool $condition, string $message): void
 
 function ip_cleanup(PDO $pdo, string $prefix, string $source): void
 {
+    $pdo->prepare('DELETE FROM central_request_logs WHERE central_request_id IN (SELECT id FROM central_requests WHERE requester_name LIKE :prefix)')->execute([':prefix' => $prefix . ' %']);
     $pdo->prepare('DELETE FROM interactions WHERE note LIKE :prefix')->execute([':prefix' => $prefix . ' %']);
+    $pdo->prepare('DELETE FROM tasks WHERE title LIKE :prefix')->execute([':prefix' => $prefix . ' %']);
+    $pdo->prepare('DELETE FROM central_requests WHERE requester_name LIKE :prefix')->execute([':prefix' => $prefix . ' %']);
     $pdo->prepare('DELETE FROM companies WHERE source = :source')->execute([':source' => $source]);
     $pdo->prepare("DELETE FROM users WHERE username LIKE 'interaction_perm_%'")->execute();
 }
@@ -84,14 +87,37 @@ try {
         $companyIds[$key] = (int) $pdo->lastInsertId();
     }
 
+    $insertCompany->execute([
+        ':sql_customer_id' => null,
+        ':name' => $prefix . ' Central Process Company',
+        ':account_type' => 'Müşteri',
+        ':status' => 'Aktif',
+        ':source' => $source,
+        ':responsible_user_id' => $userIds['admin'],
+        ':created_by' => $userIds['admin'],
+    ]);
+    $centralCompanyId = (int) $pdo->lastInsertId();
+
+    $insertCompany->execute([
+        ':sql_customer_id' => null,
+        ':name' => $prefix . ' Task Process Company',
+        ':account_type' => 'Müşteri',
+        ':status' => 'Aktif',
+        ':source' => $source,
+        ':responsible_user_id' => $userIds['manager'],
+        ':created_by' => $userIds['manager'],
+    ]);
+    $taskCompanyId = (int) $pdo->lastInsertId();
+
     $insertInteraction = $pdo->prepare('
-        INSERT INTO interactions (company_id, sql_customer_id, user_id, interaction_date, type, result, note)
-        VALUES (:company_id, :sql_customer_id, :user_id, :interaction_date, :type, :result, :note)
+        INSERT INTO interactions (company_id, sql_customer_id, central_request_id, user_id, interaction_date, type, result, note)
+        VALUES (:company_id, :sql_customer_id, :central_request_id, :user_id, :interaction_date, :type, :result, :note)
     ');
     foreach ($userIds as $key => $userId) {
         $insertInteraction->execute([
             ':company_id' => $companyIds[$key],
             ':sql_customer_id' => 880000 + array_search($key, array_keys($userIds), true) + 1,
+            ':central_request_id' => null,
             ':user_id' => $userId,
             ':interaction_date' => '2026-05-11',
             ':type' => 'Telefon',
@@ -99,6 +125,56 @@ try {
             ':note' => $prefix . ' note ' . $key,
         ]);
     }
+
+    $pdo->prepare('
+        INSERT INTO central_requests (
+            request_type, requester_name, company_id, assigned_to, assigned_by, assigned_at,
+            phone, email, city, district, product_interest, description, source, status, created_by
+        ) VALUES (
+            :request_type, :requester_name, :company_id, :assigned_to, :assigned_by, CURRENT_TIMESTAMP,
+            :phone, :email, :city, :district, :product_interest, :description, :source, :status, :created_by
+        )
+    ')->execute([
+        ':request_type' => 'Demo talebi',
+        ':requester_name' => $prefix . ' central request',
+        ':company_id' => $centralCompanyId,
+        ':assigned_to' => $userIds['specialist'],
+        ':assigned_by' => $userIds['channel'],
+        ':phone' => '05550000000',
+        ':email' => 'central@example.com',
+        ':city' => 'İstanbul',
+        ':district' => 'Merkez',
+        ':product_interest' => 'Demo',
+        ':description' => 'Central process assignment',
+        ':source' => 'Bilnex Merkez',
+        ':status' => 'İş ortağına yönlendirildi',
+        ':created_by' => $userIds['admin'],
+    ]);
+    $centralRequestId = (int) $pdo->lastInsertId();
+
+    $insertInteraction->execute([
+        ':company_id' => $centralCompanyId,
+        ':sql_customer_id' => null,
+        ':central_request_id' => $centralRequestId,
+        ':user_id' => $userIds['admin'],
+        ':interaction_date' => '2026-05-11',
+        ':type' => 'Telefon',
+        ':result' => 'Ulaşıldı',
+        ':note' => $prefix . ' central assigned note',
+    ]);
+
+    $pdo->prepare('
+        INSERT INTO tasks (company_id, title, description, assigned_by, assigned_to, due_date, status)
+        VALUES (:company_id, :title, :description, :assigned_by, :assigned_to, :due_date, :status)
+    ')->execute([
+        ':company_id' => $taskCompanyId,
+        ':title' => $prefix . ' task assignment',
+        ':description' => 'Assigned process access',
+        ':assigned_by' => $userIds['manager'],
+        ':assigned_to' => $userIds['specialist'],
+        ':due_date' => '2026-05-12',
+        ':status' => 'Açık',
+    ]);
 
     $pdo->commit();
 
@@ -121,10 +197,25 @@ try {
 
     ip_set_user($userIds['specialist']);
     $specialistNotes = ip_visible_notes($prefix);
-    ip_assert($specialistNotes === [$prefix . ' note specialist'], 'Uzman yalnızca kendi görüşmesini görür.');
+    ip_assert(in_array($prefix . ' note specialist', $specialistNotes, true), 'Uzman kendi görüşmesini görür.');
+    ip_assert(in_array($prefix . ' central assigned note', $specialistNotes, true), 'Uzman atandığı merkez talebine bağlı görüşmeyi görür ve düzenleme kapsamına alır.');
+    ip_assert(!in_array($prefix . ' note sales', $specialistNotes, true), 'Uzman ilgisiz satış görüşmesini görmez.');
+    ip_assert(!user_can_access_company($centralCompanyId), 'Uzman merkez talebi carisine doğrudan sahip değildir.');
+    ip_assert(can_record_interaction_for_company($centralCompanyId, 0), 'Uzman atandığı merkez talebi carisine görüşme kaydı girebilir.');
+    ip_assert(can_record_interaction_for_company($taskCompanyId, 0), 'Uzman kendisine atanan takip işinin carisine görüşme kaydı girebilir.');
+
+    ip_set_user($userIds['sales']);
+    $salesNotes = ip_visible_notes($prefix);
+    ip_assert(!in_array($prefix . ' central assigned note', $salesNotes, true), 'İlgisiz saha satış merkez talebi görüşmesini görmez.');
+    ip_assert(!can_record_interaction_for_company($centralCompanyId, 0), 'İlgisiz saha satış merkez talebi carisine görüşme kaydı giremez.');
+    ip_assert(!can_record_interaction_for_company($taskCompanyId, 0), 'İlgisiz saha satış takip atanmış cariye görüşme kaydı giremez.');
+
+    ip_set_user($userIds['manager']);
+    $managerNotes = ip_visible_notes($prefix);
+    ip_assert(in_array($prefix . ' central assigned note', $managerNotes, true), 'Yönetici hiyerarşisindeki merkez talebi görüşmesini görür.');
 
     ip_set_user($userIds['admin']);
-    ip_assert(count(ip_visible_notes($prefix)) === count($users), 'Admin tüm görüşmeleri görür.');
+    ip_assert(count(ip_visible_notes($prefix)) === count($users) + 1, 'Admin tüm görüşmeleri görür.');
 
     echo "Görüşme yetki testi tamamlandi.\n";
 } finally {

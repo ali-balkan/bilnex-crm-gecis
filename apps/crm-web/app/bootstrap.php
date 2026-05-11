@@ -1287,6 +1287,12 @@ function interaction_visibility_condition(string $alias = 'i'): array
         $conditions[] = "EXISTS (SELECT 1 FROM users interaction_scope_user WHERE interaction_scope_user.id = {$alias}.user_id AND interaction_scope_user.role IN (" . implode(', ', $placeholders) . '))';
     }
 
+    [$centralScopeSql, $centralScopeParams] = central_request_visibility_condition('interaction_scope_request');
+    if ($centralScopeSql !== '') {
+        $conditions[] = "EXISTS (SELECT 1 FROM central_requests interaction_scope_request WHERE interaction_scope_request.id = {$alias}.central_request_id{$centralScopeSql})";
+        $params += $centralScopeParams;
+    }
+
     return [' AND (' . implode(' OR ', $conditions) . ')', $params];
 }
 
@@ -1884,6 +1890,14 @@ function can_record_interaction_for_company(int $companyId, int $sqlCustomerId =
         return false;
     }
 
+    if (user_can_access_company($companyId)) {
+        return true;
+    }
+
+    if (user_has_process_access_to_company($companyId)) {
+        return true;
+    }
+
     if (company_source() === 'sqlserver' && $sqlCustomerId > 0) {
         $companySqlCustomerId = company_sql_customer_id($companyId);
         if ($companySqlCustomerId !== null && $companySqlCustomerId === $sqlCustomerId) {
@@ -1891,7 +1905,27 @@ function can_record_interaction_for_company(int $companyId, int $sqlCustomerId =
         }
     }
 
-    return user_can_access_company($companyId);
+    return false;
+}
+
+function user_has_process_access_to_company(int $companyId): bool
+{
+    if ($companyId <= 0) {
+        return false;
+    }
+
+    [$taskScopeSql, $taskScopeParams] = task_visibility_condition('t');
+    $taskStmt = db()->prepare("SELECT COUNT(*) FROM tasks t WHERE t.company_id = :process_company_id{$taskScopeSql}");
+    $taskStmt->execute($taskScopeParams + [':process_company_id' => $companyId]);
+    $taskCount = (int) $taskStmt->fetchColumn();
+    if ($taskCount > 0) {
+        return true;
+    }
+
+    [$centralScopeSql, $centralScopeParams] = central_request_visibility_condition('cr');
+    $centralStmt = db()->prepare("SELECT COUNT(*) FROM central_requests cr WHERE cr.company_id = :process_company_id{$centralScopeSql}");
+    $centralStmt->execute($centralScopeParams + [':process_company_id' => $companyId]);
+    return (int) $centralStmt->fetchColumn() > 0;
 }
 
 function require_interaction_company_access(int $companyId, int $sqlCustomerId = 0): void

@@ -1774,6 +1774,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 http_response_code(404);
                 exit('Görüşme kaydı bulunamadı veya düzenleme yetkiniz yok.');
             }
+            if ($centralRequestId <= 0 && (int) ($existingInteraction['central_request_id'] ?? 0) > 0) {
+                $centralRequestId = (int) $existingInteraction['central_request_id'];
+            }
         }
         if ($centralRequestId > 0) {
             if (!user_can_access_central_request($centralRequestId)) {
@@ -3026,6 +3029,7 @@ if ($page === 'interactions') {
             <?= csrf_field() ?>
             <input type="hidden" name="id" value="<?= e($editInteraction['id'] ?? 0) ?>">
             <input type="hidden" name="return_to" value="interactions">
+            <input type="hidden" name="central_request_id" value="<?= e($editInteraction['central_request_id'] ?? 0) ?>">
             <?php if ($usingSqlCustomerPicker): ?>
                 <label class="wide">Görüşme yapılan cari
                     <input type="hidden" name="company_id" value="<?= e($editInteraction['company_id'] ?? '') ?>">
