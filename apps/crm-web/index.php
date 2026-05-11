@@ -664,6 +664,11 @@ function render_footer(): void
             </main>
         </div>
         <script>
+            window.crmAssignmentNotifications = {
+                pollUrl: <?= json_encode(app_url('assignment_notifications'), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>,
+                readUrl: <?= json_encode(app_url('mark_assignment_notifications_read'), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>,
+                csrfToken: <?= json_encode(csrf_token(), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>
+            };
             document.querySelectorAll('table').forEach((table) => {
                 const labels = Array.from(table.querySelectorAll('thead th')).map((th) => th.textContent.trim());
                 table.querySelectorAll('tbody tr').forEach((row) => {
@@ -1011,6 +1016,30 @@ if ($page === 'logout') {
 
 require_login();
 
+if ($page === 'assignment_notifications') {
+    header('Content-Type: application/json; charset=utf-8');
+    $items = array_map(static function (array $item): array {
+        return [
+            'id' => (int) $item['id'],
+            'title' => (string) $item['title'],
+            'message' => (string) ($item['message'] ?? ''),
+            'target_url' => (string) ($item['target_url'] ?? ''),
+            'sound_key' => (string) ($item['sound_key'] ?? 'double'),
+            'created_at' => (string) $item['created_at'],
+            'created_by_name' => (string) ($item['created_by_name'] ?? ''),
+        ];
+    }, unread_assignment_notifications((int) current_user()['id']));
+    echo json_encode(['items' => $items], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+if ($page === 'mark_assignment_notifications_read') {
+    mark_assignment_notifications_read((int) current_user()['id'], $_POST['ids'] ?? []);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 if ($page === 'sql_customer_search') {
     header('Content-Type: application/json; charset=utf-8');
     $query = trim((string) ($_GET['q'] ?? ''));
@@ -1259,13 +1288,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ':status' => $status,
         ];
         if ($taskId > 0) {
+            $assignmentChanged = $existingTask && (int) ($existingTask['assigned_to'] ?? 0) !== $assignedTo;
             $completedSet = $status === 'Tamamlandı' ? ', completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP)' : ', completed_at = NULL, completion_note = NULL';
             $data[':id'] = $taskId;
             db()->prepare("UPDATE tasks SET company_id = :company_id, sql_customer_id = :sql_customer_id, title = :title, description = :description, assigned_to = :assigned_to, due_date = :due_date, status = :status, updated_at = CURRENT_TIMESTAMP{$completedSet} WHERE id = :id")->execute($data);
+            if ($assignmentChanged) {
+                create_assignment_notification(
+                    $assignedTo,
+                    'task',
+                    $taskId,
+                    'Yeni takip işi atandı',
+                    $title . ($data[':due_date'] ? ' · Termin: ' . $data[':due_date'] : ''),
+                    app_url('followups', ['edit_task' => $taskId])
+                );
+            }
             flash('İş güncellendi.');
         } else {
             $data[':assigned_by'] = current_user()['id'];
             db()->prepare('INSERT INTO tasks (company_id, sql_customer_id, title, description, assigned_by, assigned_to, due_date, status) VALUES (:company_id, :sql_customer_id, :title, :description, :assigned_by, :assigned_to, :due_date, :status)')->execute($data);
+            $taskId = (int) db()->lastInsertId();
+            create_assignment_notification(
+                $assignedTo,
+                'task',
+                $taskId,
+                'Yeni takip işi atandı',
+                $title . ($data[':due_date'] ? ' · Termin: ' . $data[':due_date'] : ''),
+                app_url('followups', ['edit_task' => $taskId])
+            );
             flash('İş atandı.');
         }
         redirect_to('followups');
@@ -1406,6 +1455,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($assignmentChanged) {
             $requestForTask = rows('SELECT * FROM central_requests WHERE id = :id', [':id' => $requestId])[0] ?? [];
             create_central_request_followup_task($requestForTask);
+            create_assignment_notification(
+                $assignedTo,
+                'central_request',
+                $requestId,
+                'Merkez talebi atandı',
+                $requesterName . ' · ' . $requestType,
+                app_url('central_requests', ['id' => $requestId])
+            );
         }
 
         redirect_to('central_requests', ['id' => $requestId]);
@@ -1465,14 +1522,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ];
 
         if ($goalId > 0) {
+            $assignmentChanged = $existingGoal && (int) ($existingGoal['assigned_to'] ?? 0) !== $assignedTo;
             $data[':id'] = $goalId;
             db()->prepare('UPDATE goals SET title = :title, description = :description, assigned_to = :assigned_to, recurrence_type = :recurrence_type, start_date = :start_date, end_date = :end_date, active = :active, updated_at = CURRENT_TIMESTAMP WHERE id = :id')->execute($data);
             refresh_goal_occurrences($goalId);
+            if ($assignmentChanged) {
+                create_assignment_notification(
+                    $assignedTo,
+                    'recurring_task',
+                    $goalId,
+                    'Düzenli görev atandı',
+                    $title . ' · ' . (goal_recurrence_options()[$recurrenceType] ?? $recurrenceType),
+                    app_url('recurring_tasks', ['edit_recurring_task' => $goalId])
+                );
+            }
             flash('Düzenli görev atama güncellendi.');
         } else {
             $data[':assigned_by'] = (int) current_user()['id'];
             db()->prepare('INSERT INTO goals (title, description, assigned_by, assigned_to, recurrence_type, start_date, end_date, active) VALUES (:title, :description, :assigned_by, :assigned_to, :recurrence_type, :start_date, :end_date, :active)')->execute($data);
-            refresh_goal_occurrences((int) db()->lastInsertId());
+            $goalId = (int) db()->lastInsertId();
+            refresh_goal_occurrences($goalId);
+            create_assignment_notification(
+                $assignedTo,
+                'recurring_task',
+                $goalId,
+                'Düzenli görev atandı',
+                $title . ' · ' . (goal_recurrence_options()[$recurrenceType] ?? $recurrenceType),
+                app_url('recurring_tasks', ['edit_recurring_task' => $goalId])
+            );
             flash('Düzenli görev atama oluşturuldu.');
         }
         redirect_to('recurring_tasks');

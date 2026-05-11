@@ -600,6 +600,22 @@ function init_db(): void
             UNIQUE(goal_id, period_key)
         );
 
+        CREATE TABLE IF NOT EXISTS assignment_notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            event_type TEXT NOT NULL,
+            reference_id INTEGER,
+            title TEXT NOT NULL,
+            message TEXT,
+            target_url TEXT,
+            sound_key TEXT NOT NULL DEFAULT 'double',
+            created_by INTEGER,
+            read_at TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+        );
+
         CREATE INDEX IF NOT EXISTS idx_interactions_user_date ON interactions(user_id, interaction_date);
         CREATE INDEX IF NOT EXISTS idx_interactions_company_date ON interactions(company_id, interaction_date);
         CREATE INDEX IF NOT EXISTS idx_interactions_result_date ON interactions(result, interaction_date);
@@ -608,6 +624,7 @@ function init_db(): void
         CREATE INDEX IF NOT EXISTS idx_central_request_logs_request ON central_request_logs(central_request_id, created_at);
         CREATE INDEX IF NOT EXISTS idx_goals_assignee_active ON goals(assigned_to, active);
         CREATE INDEX IF NOT EXISTS idx_goal_occurrences_due_status ON goal_occurrences(due_date, status);
+        CREATE INDEX IF NOT EXISTS idx_assignment_notifications_user_read ON assignment_notifications(user_id, read_at, created_at);
     ");
 
     $userColumns = $pdo->query('PRAGMA table_info(users)')->fetchAll();
@@ -1171,6 +1188,69 @@ function create_central_request_followup_task(array $request): void
         ':due_date' => (new DateTimeImmutable('tomorrow'))->format('Y-m-d'),
         ':status' => 'Açık',
     ]);
+}
+
+function create_assignment_notification(int $userId, string $eventType, ?int $referenceId, string $title, string $message = '', string $targetUrl = '', ?int $createdBy = null): void
+{
+    if ($userId <= 0 || trim($title) === '') {
+        return;
+    }
+
+    $actorId = $createdBy ?? (int) (current_user()['id'] ?? 0);
+    if ($actorId > 0 && $actorId === $userId) {
+        return;
+    }
+
+    db()->prepare('
+        INSERT INTO assignment_notifications (user_id, event_type, reference_id, title, message, target_url, sound_key, created_by)
+        VALUES (:user_id, :event_type, :reference_id, :title, :message, :target_url, :sound_key, :created_by)
+    ')->execute([
+        ':user_id' => $userId,
+        ':event_type' => $eventType,
+        ':reference_id' => $referenceId,
+        ':title' => trim($title),
+        ':message' => trim($message),
+        ':target_url' => trim($targetUrl),
+        ':sound_key' => 'double',
+        ':created_by' => $actorId > 0 ? $actorId : null,
+    ]);
+}
+
+function unread_assignment_notifications(int $userId, int $limit = 8): array
+{
+    if ($userId <= 0) {
+        return [];
+    }
+
+    $limit = max(1, min(20, $limit));
+    $stmt = db()->prepare("
+        SELECT an.*, u.full_name created_by_name
+        FROM assignment_notifications an
+        LEFT JOIN users u ON u.id = an.created_by
+        WHERE an.user_id = :user_id AND an.read_at IS NULL
+        ORDER BY an.created_at ASC, an.id ASC
+        LIMIT {$limit}
+    ");
+    $stmt->execute([':user_id' => $userId]);
+    return $stmt->fetchAll();
+}
+
+function mark_assignment_notifications_read(int $userId, array $ids): void
+{
+    $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static fn($id) => $id > 0)));
+    if ($userId <= 0 || !$ids) {
+        return;
+    }
+
+    $placeholders = [];
+    $params = [':user_id' => $userId];
+    foreach ($ids as $index => $id) {
+        $param = ':notification_id_' . $index;
+        $placeholders[] = $param;
+        $params[$param] = $id;
+    }
+
+    db()->prepare('UPDATE assignment_notifications SET read_at = CURRENT_TIMESTAMP WHERE user_id = :user_id AND read_at IS NULL AND id IN (' . implode(', ', $placeholders) . ')')->execute($params);
 }
 
 function can_manage_users(): bool

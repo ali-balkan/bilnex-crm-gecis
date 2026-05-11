@@ -15,6 +15,91 @@
     --radius: 8px;
 }
 
+.assignment-notification-stack {
+    position: fixed;
+    right: 18px;
+    top: 18px;
+    z-index: 3000;
+    display: grid;
+    gap: 10px;
+    width: min(360px, calc(100vw - 32px));
+    pointer-events: none;
+}
+
+.assignment-toast {
+    position: relative;
+    pointer-events: auto;
+    background: #ffffff;
+    border: 1px solid #b9daf4;
+    border-left: 5px solid #0084DD;
+    border-radius: 8px;
+    box-shadow: 0 18px 40px rgba(6, 33, 72, .18);
+    padding: 14px 44px 14px 14px;
+    animation: toast-slide-in .2s ease-out;
+}
+
+.assignment-toast.is-fading {
+    opacity: 0;
+    transform: translateY(-6px);
+    transition: .24s ease;
+}
+
+.assignment-toast strong,
+.assignment-toast span,
+.assignment-toast small,
+.assignment-toast a {
+    display: block;
+}
+
+.assignment-toast strong {
+    color: #062148;
+    margin-bottom: 5px;
+}
+
+.assignment-toast span,
+.assignment-toast small {
+    color: #52677f;
+    line-height: 1.4;
+}
+
+.assignment-toast small {
+    margin-top: 6px;
+    font-size: 12px;
+}
+
+.assignment-toast a {
+    width: fit-content;
+    margin-top: 10px;
+    color: #0075c9;
+    font-weight: 800;
+}
+
+.assignment-toast-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 28px;
+    height: 28px;
+    border: 0;
+    border-radius: 50%;
+    background: #eef6fd;
+    color: #062148;
+    cursor: pointer;
+    font-size: 20px;
+    line-height: 1;
+}
+
+@keyframes toast-slide-in {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 @media print {
     @page {
         size: A4 landscape;

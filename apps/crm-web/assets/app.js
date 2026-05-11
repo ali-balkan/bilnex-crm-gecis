@@ -507,4 +507,145 @@
             taxOfficeDialog.close();
         });
     }
+
+    const notificationConfig = window.crmAssignmentNotifications || null;
+    if (notificationConfig && notificationConfig.pollUrl && notificationConfig.readUrl) {
+        let notificationAudioContext = null;
+        let notificationPolling = false;
+        const shownNotificationIds = new Set();
+
+        const escapeHtml = (value) => String(value || '').replace(/[&<>"']/g, (char) => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;',
+        }[char]));
+
+        const notificationContext = () => {
+            if (!notificationAudioContext) {
+                notificationAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            return notificationAudioContext;
+        };
+
+        const playTone = (start, frequency, duration, gainValue, type = 'triangle') => {
+            const ctx = notificationContext();
+            const oscillator = ctx.createOscillator();
+            const gain = ctx.createGain();
+            oscillator.type = type;
+            oscillator.frequency.setValueAtTime(frequency, start);
+            gain.gain.setValueAtTime(0.0001, start);
+            gain.gain.exponentialRampToValueAtTime(gainValue, start + 0.015);
+            gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+            oscillator.connect(gain);
+            gain.connect(ctx.destination);
+            oscillator.start(start);
+            oscillator.stop(start + duration + 0.03);
+        };
+
+        const playAssignmentSound = async () => {
+            try {
+                const ctx = notificationContext();
+                if (ctx.state === 'suspended') {
+                    await ctx.resume();
+                }
+                const now = ctx.currentTime + 0.02;
+                for (let offset = 0; offset < 5; offset += 0.55) {
+                    playTone(now + offset, 740, 0.12, 0.13);
+                    playTone(now + offset + 0.18, 980, 0.14, 0.13);
+                }
+            } catch (error) {
+                // Browser audio permissions may require one user interaction first.
+            }
+        };
+
+        const unlockAudio = () => {
+            try {
+                const ctx = notificationContext();
+                if (ctx.state === 'suspended') {
+                    ctx.resume();
+                }
+            } catch (error) {
+                // No-op.
+            }
+        };
+
+        ['pointerdown', 'keydown'].forEach((eventName) => {
+            window.addEventListener(eventName, unlockAudio, { once: true, passive: true });
+        });
+
+        const notificationStack = document.createElement('div');
+        notificationStack.className = 'assignment-notification-stack';
+        notificationStack.setAttribute('aria-live', 'polite');
+        document.body.appendChild(notificationStack);
+
+        const showNotification = (item) => {
+            const toast = document.createElement('article');
+            toast.className = 'assignment-toast';
+            const target = item.target_url || '';
+            toast.innerHTML = (
+                '<button type="button" class="assignment-toast-close" aria-label="Bildirimi kapat">×</button>' +
+                '<strong>' + escapeHtml(item.title || 'Yeni atama') + '</strong>' +
+                (item.message ? '<span>' + escapeHtml(item.message) + '</span>' : '') +
+                (item.created_by_name ? '<small>Atayan: ' + escapeHtml(item.created_by_name) + '</small>' : '') +
+                (target ? '<a href="' + escapeHtml(target) + '">Aç</a>' : '')
+            );
+            const close = qs('.assignment-toast-close', toast);
+            if (close) {
+                close.addEventListener('click', () => toast.remove());
+            }
+            notificationStack.appendChild(toast);
+            window.setTimeout(() => {
+                toast.classList.add('is-fading');
+                window.setTimeout(() => toast.remove(), 260);
+            }, 14000);
+        };
+
+        const markNotificationsRead = async (ids) => {
+            if (!ids.length) return;
+            const formData = new FormData();
+            formData.set('csrf_token', notificationConfig.csrfToken || '');
+            ids.forEach((id) => formData.append('ids[]', id));
+            try {
+                await fetch(notificationConfig.readUrl, {
+                    method: 'POST',
+                    body: formData,
+                    headers: { Accept: 'application/json' },
+                });
+            } catch (error) {
+                // The next poll can try again if marking fails.
+            }
+        };
+
+        const pollNotifications = async () => {
+            if (notificationPolling) return;
+            notificationPolling = true;
+            try {
+                const response = await fetch(notificationConfig.pollUrl, {
+                    headers: { Accept: 'application/json' },
+                    cache: 'no-store',
+                });
+                const payload = await response.json();
+                const items = (payload.items || []).filter((item) => {
+                    const id = Number(item.id || 0);
+                    if (!id || shownNotificationIds.has(id)) return false;
+                    shownNotificationIds.add(id);
+                    return true;
+                });
+                if (items.length) {
+                    items.forEach(showNotification);
+                    playAssignmentSound();
+                    markNotificationsRead(items.map((item) => item.id));
+                }
+            } catch (error) {
+                // Keep polling quietly; notification fetch should never block CRM usage.
+            } finally {
+                notificationPolling = false;
+            }
+        };
+
+        window.setTimeout(pollNotifications, 1200);
+        window.setInterval(pollNotifications, 5000);
+    }
 }());
