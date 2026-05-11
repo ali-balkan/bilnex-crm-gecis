@@ -1805,7 +1805,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('Görüşme kaydı için cari seçin.', 'danger');
             redirect_to('interactions');
         }
-        require_company_access($companyId);
+        require_interaction_company_access($companyId, $sqlCustomerId);
         $result = $_POST['result'] ?? 'Tekrar aranacak';
         $nextFollowupDate = ($_POST['next_followup_date'] ?? '') ?: null;
         $data = [
@@ -2948,10 +2948,9 @@ if ($page === 'interactions') {
         $interactionCompanies = rows("SELECT c.id, c.name, c.account_code, c.account_type, c.sql_customer_id, c.contact_person, c.phone, c.city, c.district FROM companies c {$companyWhere} ORDER BY c.name LIMIT 600", $companyParams);
     }
 
-    $interactionScopeSql = '';
-    $interactionScopeParams = [];
-    $interactionScopeWhere = ' WHERE 1 = 1';
-    $interactionScopeUsers = active_users();
+    [$interactionScopeSql, $interactionScopeParams] = interaction_visibility_condition('i');
+    $interactionScopeWhere = ' WHERE 1 = 1' . $interactionScopeSql;
+    $interactionScopeUsers = interaction_scope_users();
     $allowedInteractionUserIds = array_map(static fn($user) => (int) $user['id'], $interactionScopeUsers);
     $selectedInteractionUserId = (int) ($_GET['interaction_user_id'] ?? 0);
     if ($selectedInteractionUserId > 0 && !in_array($selectedInteractionUserId, $allowedInteractionUserIds, true)) {

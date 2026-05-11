@@ -1878,5 +1878,29 @@ function require_company_access(int $companyId): void
     }
 }
 
+function can_record_interaction_for_company(int $companyId, int $sqlCustomerId = 0): bool
+{
+    if ($companyId <= 0) {
+        return false;
+    }
+
+    if (company_source() === 'sqlserver' && $sqlCustomerId > 0) {
+        $companySqlCustomerId = company_sql_customer_id($companyId);
+        if ($companySqlCustomerId !== null && $companySqlCustomerId === $sqlCustomerId) {
+            return true;
+        }
+    }
+
+    return user_can_access_company($companyId);
+}
+
+function require_interaction_company_access(int $companyId, int $sqlCustomerId = 0): void
+{
+    if (!can_record_interaction_for_company($companyId, $sqlCustomerId)) {
+        http_response_code(403);
+        exit('Bu cari için görüşme kaydı ekleme yetkiniz yok.');
+    }
+}
+
 init_db();
 sync_goal_occurrences();
