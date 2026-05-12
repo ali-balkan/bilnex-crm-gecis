@@ -3107,8 +3107,11 @@ if ($page === 'interactions') {
     } elseif ($interactionScopeMode === 'role' && $selectedInteractionRole !== '') {
         $scopeLabel = role_label($selectedInteractionRole) . ' görüşmeleri';
     }
+    $interactionDateFilter = (string) ($_GET['date_filter'] ?? 'month');
+    if (!in_array($interactionDateFilter, ['all', 'today', 'week', 'month'], true)) {
+        $interactionDateFilter = 'month';
+    }
 
-    $totalVisibleInteractions = (int) scalar("SELECT COUNT(*) FROM interactions i {$interactionScopeWhere}{$interactionFilterWhere}", $interactionScopeParams + $interactionFilterParams);
     $todayInteractions = (int) scalar("SELECT COUNT(*) FROM interactions i {$interactionScopeWhere}{$interactionFilterWhere} AND date(i.interaction_date) = :today", $interactionScopeParams + $interactionFilterParams + [':today' => $today]);
     [$weekFrom, $weekTo] = date_filter_range(['date_filter' => 'week']);
     [$monthFrom, $monthTo] = date_filter_range(['date_filter' => 'month']);
@@ -3129,9 +3132,12 @@ if ($page === 'interactions') {
         $listWhere .= ' AND i.result = :interaction_result';
         $listParams[':interaction_result'] = (string) $_GET['result'];
     }
-    apply_date_filter($listWhere, $listParams, 'i.interaction_date', $_GET);
+    $interactionDateInput = $_GET;
+    $interactionDateInput['date_filter'] = $interactionDateFilter === 'all' ? '' : $interactionDateFilter;
+    apply_date_filter($listWhere, $listParams, 'i.interaction_date', $interactionDateInput);
 
     $visibleInteractions = rows("SELECT i.*, c.name company_name, c.account_code company_account_code, c.account_type company_account_type, c.contact_person, c.phone, c.city, c.district, u.full_name user_name, u.role user_role FROM interactions i JOIN companies c ON c.id = i.company_id LEFT JOIN users u ON u.id = i.user_id {$listWhere} ORDER BY date(i.interaction_date) DESC, i.created_at DESC LIMIT 80", $listParams);
+    $filteredInteractionCount = (int) scalar("SELECT COUNT(*) FROM interactions i JOIN companies c ON c.id = i.company_id LEFT JOIN users u ON u.id = i.user_id {$listWhere}", $listParams);
     $resultSummary = rows("SELECT i.result, COUNT(*) total FROM interactions i JOIN companies c ON c.id = i.company_id LEFT JOIN users u ON u.id = i.user_id {$listWhere} GROUP BY i.result ORDER BY total DESC", $listParams);
     $lastInteractionDate = scalar("SELECT MAX(i.interaction_date) FROM interactions i JOIN companies c ON c.id = i.company_id LEFT JOIN users u ON u.id = i.user_id {$listWhere}", $listParams);
     $editInteractionId = (int) ($_GET['edit_interaction'] ?? 0);
@@ -3148,6 +3154,10 @@ if ($page === 'interactions') {
         'type' => $_GET['type'] ?? '',
         'result' => $_GET['result'] ?? '',
     ]), static fn($value) => $value !== '' && $value !== null);
+    $interactionFiltersActive = $interactionScopeMode !== 'all'
+        || trim((string) ($_GET['q'] ?? '')) !== ''
+        || trim((string) ($_GET['type'] ?? '')) !== ''
+        || trim((string) ($_GET['result'] ?? '')) !== '';
     ?>
     <section class="interaction-hero panel">
         <div>
@@ -3236,80 +3246,89 @@ if ($page === 'interactions') {
         </dialog>
     <?php endif; ?>
 
-    <section class="panel interaction-filter-panel">
-        <div class="section-title">
-            <div>
-                <h2>Görünürlük ve filtreler</h2>
-                <span class="muted"><?= e($scopeLabel) ?> · <?= e($totalVisibleInteractions) ?> görünür kayıt</span>
+    <details class="panel interaction-filter-panel"<?= $interactionFiltersActive ? ' open' : '' ?>>
+        <summary class="interaction-filter-summary">
+            <span>
+                <strong>Filtreler</strong>
+                <small><?= e($scopeLabel) ?> · <?= e($interactionDateFilter === 'all' ? 'Tüm tarihler' : ['today' => 'Bugün', 'week' => 'Bu hafta', 'month' => 'Bu ay'][$interactionDateFilter]) ?> · <?= e($filteredInteractionCount) ?> kayıt<?= $interactionFiltersActive ? ' · filtre aktif' : '' ?></small>
+            </span>
+            <span class="interaction-filter-summary-actions">
+                <span class="period-tabs">
+                    <?php foreach (['all' => 'Tümü', 'today' => 'Bugün', 'week' => 'Bu hafta', 'month' => 'Bu ay'] as $periodValue => $periodLabel): ?>
+                        <a class="<?= e($interactionDateFilter === $periodValue ? 'active' : '') ?>" href="<?= e(app_url('interactions', array_merge($interactionPresetParams, ['date_filter' => $periodValue]))) ?>"><?= e($periodLabel) ?></a>
+                    <?php endforeach; ?>
+                </span>
+                <span class="btn small">Aç / kapat</span>
+            </span>
+        </summary>
+        <div class="interaction-filter-body">
+            <form class="interaction-filter-grid" method="get">
+                <input type="hidden" name="page" value="interactions">
+                <label>Görüşme kapsamı
+                    <select name="interaction_scope" data-interaction-scope>
+                        <option value="all"<?= selected($interactionScopeMode, 'all') ?>>Tüm yetkim dahilinde</option>
+                        <option value="mine"<?= selected($interactionScopeMode, 'mine') ?>>Sadece benim</option>
+                        <option value="user"<?= selected($interactionScopeMode, 'user') ?>>Kullanıcı seç</option>
+                        <option value="role"<?= selected($interactionScopeMode, 'role') ?>>Role göre seç</option>
+                    </select>
+                </label>
+                <label>Kullanıcı
+                    <select name="interaction_user_id" data-interaction-user>
+                        <option value="0">Kullanıcı seçin</option>
+                        <?php foreach ($interactionScopeUsers as $scopeUser): ?>
+                            <option value="<?= e($scopeUser['id']) ?>"<?= selected($selectedInteractionUserId, $scopeUser['id']) ?>><?= e($scopeUser['full_name']) ?> - <?= e(role_label($scopeUser['role'])) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+                <label>Rol
+                    <select name="interaction_role" data-interaction-role>
+                        <option value="">Rol seçin</option>
+                        <?php foreach ($availableInteractionRoles as $role => $label): ?>
+                            <option value="<?= e($role) ?>"<?= selected($selectedInteractionRole, $role) ?>><?= e($label) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+                <label>Arama
+                    <input name="q" value="<?= e($_GET['q'] ?? '') ?>" placeholder="Cari, not, personel veya telefon ara...">
+                </label>
+                <label>Görüşme türü
+                    <select name="type">
+                        <option value="">Tüm türler</option>
+                        <?php foreach (interaction_types() as $type): ?>
+                            <option value="<?= e($type) ?>"<?= selected($_GET['type'] ?? '', $type) ?>><?= e($type) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+                <label>Sonuç
+                    <select name="result">
+                        <option value="">Tüm sonuçlar</option>
+                        <?php foreach (interaction_results() as $result): ?>
+                            <option value="<?= e($result) ?>"<?= selected($_GET['result'] ?? '', $result) ?>><?= e($result) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+                <label>Dönem
+                    <select name="date_filter">
+                        <option value="all"<?= selected($interactionDateFilter, 'all') ?>>Tüm tarihler</option>
+                        <option value="today"<?= selected($interactionDateFilter, 'today') ?>>Bugün</option>
+                        <option value="week"<?= selected($interactionDateFilter, 'week') ?>>Bu hafta</option>
+                        <option value="month"<?= selected($interactionDateFilter, 'month') ?>>Bu ay</option>
+                    </select>
+                </label>
+                <button class="btn primary" type="submit">Filtrele</button>
+            </form>
+            <div class="interaction-result-strip">
+                <div>
+                    <strong>Son görüşme</strong>
+                    <span><?= e($lastInteractionDate ?: 'Henüz yok') ?></span>
+                </div>
+                <div class="interaction-result-bars">
+                    <strong>Sonuç dağılımı</strong>
+                    <?php render_bar_list($resultSummary, 'result', 'total'); ?>
+                </div>
             </div>
-            <?php date_filter_presets('interactions', $interactionPresetParams); ?>
         </div>
-        <form class="interaction-filter-grid" method="get">
-            <input type="hidden" name="page" value="interactions">
-            <label>Görüşme kapsamı
-                <select name="interaction_scope" data-interaction-scope>
-                    <option value="all"<?= selected($interactionScopeMode, 'all') ?>>Tüm yetkim dahilinde</option>
-                    <option value="mine"<?= selected($interactionScopeMode, 'mine') ?>>Sadece benim</option>
-                    <option value="user"<?= selected($interactionScopeMode, 'user') ?>>Kullanıcı seç</option>
-                    <option value="role"<?= selected($interactionScopeMode, 'role') ?>>Role göre seç</option>
-                </select>
-            </label>
-            <label>Kullanıcı
-                <select name="interaction_user_id" data-interaction-user>
-                    <option value="0">Kullanıcı seçin</option>
-                    <?php foreach ($interactionScopeUsers as $scopeUser): ?>
-                        <option value="<?= e($scopeUser['id']) ?>"<?= selected($selectedInteractionUserId, $scopeUser['id']) ?>><?= e($scopeUser['full_name']) ?> - <?= e(role_label($scopeUser['role'])) ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </label>
-            <label>Rol
-                <select name="interaction_role" data-interaction-role>
-                    <option value="">Rol seçin</option>
-                    <?php foreach ($availableInteractionRoles as $role => $label): ?>
-                        <option value="<?= e($role) ?>"<?= selected($selectedInteractionRole, $role) ?>><?= e($label) ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </label>
-            <label>Arama
-                <input name="q" value="<?= e($_GET['q'] ?? '') ?>" placeholder="Cari, not, personel veya telefon ara...">
-            </label>
-            <label>Görüşme türü
-                <select name="type">
-                    <option value="">Tüm türler</option>
-                    <?php foreach (interaction_types() as $type): ?>
-                        <option value="<?= e($type) ?>"<?= selected($_GET['type'] ?? '', $type) ?>><?= e($type) ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </label>
-            <label>Sonuç
-                <select name="result">
-                    <option value="">Tüm sonuçlar</option>
-                    <?php foreach (interaction_results() as $result): ?>
-                        <option value="<?= e($result) ?>"<?= selected($_GET['result'] ?? '', $result) ?>><?= e($result) ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </label>
-            <label>Dönem
-                <select name="date_filter">
-                    <option value="">Tüm tarihler</option>
-                    <option value="today"<?= selected($_GET['date_filter'] ?? '', 'today') ?>>Bugün</option>
-                    <option value="week"<?= selected($_GET['date_filter'] ?? '', 'week') ?>>Bu hafta</option>
-                    <option value="month"<?= selected($_GET['date_filter'] ?? '', 'month') ?>>Bu ay</option>
-                </select>
-            </label>
-            <button class="btn primary" type="submit">Filtrele</button>
-        </form>
-        <div class="interaction-result-strip">
-            <div>
-                <strong>Son görüşme</strong>
-                <span><?= e($lastInteractionDate ?: 'Henüz yok') ?></span>
-            </div>
-            <div class="interaction-result-bars">
-                <strong>Sonuç dağılımı</strong>
-                <?php render_bar_list($resultSummary, 'result', 'total'); ?>
-            </div>
-        </div>
-    </section>
+    </details>
 
     <section class="panel interaction-history-panel">
         <div class="section-title">
@@ -3317,7 +3336,7 @@ if ($page === 'interactions') {
                 <h2>Görüşme listesi</h2>
                 <span class="muted">Son 80 kayıt listelenir. Daha dar sonuç için filtreleri kullanın.</span>
             </div>
-            <span class="muted"><?= e(count($visibleInteractions)) ?> kayıt gösteriliyor</span>
+            <span class="muted"><?= e(count($visibleInteractions)) ?> / <?= e($filteredInteractionCount) ?> kayıt gösteriliyor</span>
         </div>
         <div class="table-wrap compact-table-wrap">
             <table class="compact-table interaction-table">

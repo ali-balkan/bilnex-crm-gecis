@@ -3020,8 +3020,65 @@ dialog.modal::backdrop {
 }
 
 .interaction-filter-panel {
-    display: grid;
+    padding: 0;
+    overflow: hidden;
+}
+
+.interaction-filter-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     gap: 14px;
+    min-height: 56px;
+    padding: 12px 18px;
+    cursor: pointer;
+    list-style: none;
+}
+
+.interaction-filter-summary::-webkit-details-marker {
+    display: none;
+}
+
+.interaction-filter-summary strong,
+.interaction-filter-summary small {
+    display: block;
+}
+
+.interaction-filter-summary strong {
+    color: var(--primary-dark);
+    font-size: 17px;
+}
+
+.interaction-filter-summary small {
+    margin-top: 3px;
+    color: var(--muted);
+}
+
+.interaction-filter-summary-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.interaction-filter-summary .period-tabs {
+    margin: 0;
+}
+
+.interaction-filter-summary .period-tabs a {
+    min-height: 34px;
+    padding: 6px 11px;
+}
+
+.interaction-filter-panel[open] .interaction-filter-summary {
+    border-bottom: 1px solid var(--line);
+}
+
+.interaction-filter-body {
+    display: grid;
+    gap: 12px;
+    padding: 14px 18px 16px;
 }
 
 .interaction-filter-grid {
@@ -3045,7 +3102,7 @@ dialog.modal::backdrop {
     grid-template-columns: minmax(160px, .35fr) minmax(0, 1fr);
     gap: 14px;
     align-items: start;
-    padding: 12px;
+    padding: 10px 12px;
     border-radius: 8px;
     background: #f7fbff;
 }
@@ -3982,6 +4039,10 @@ dialog.modal::backdrop {
     .topbar, .detail-head, .actions, .section-title, .report-hero, .field-hero, .profile-session, .interaction-card-main { align-items: stretch; flex-direction: column; }
     .report-actions, .quick-actions, .period-tabs { justify-content: stretch; }
     .report-actions .btn, .quick-actions .btn, .period-tabs a { width: 100%; }
+    .interaction-filter-summary { align-items: stretch; flex-direction: column; }
+    .interaction-filter-summary-actions { justify-content: stretch; }
+    .interaction-filter-summary-actions .btn { width: 100%; justify-content: center; }
+    .interaction-filter-summary .period-tabs a { width: auto; flex: 1 1 82px; }
     .stats-grid, .grid-two, .form-grid, .filters, .company-search-panel, .company-search-panel.has-clear, .company-search-panel-local, .company-search-panel-local.has-clear, .import-panel, .dashboard-grid, .pipeline, .field-focus-grid, .analytics-split, .task-command, .task-stats, .task-meta, .sql-customer-picker, .sql-search-row, .field-action-row, .dashboard-list-grid, .interaction-hero, .interaction-hero-stats, .interaction-layout, .interaction-filters, .interaction-filter-grid, .interaction-result-strip, .interaction-meta, .opportunities-toolbar, .page-dashboard .stats-grid { grid-template-columns: 1fr; }
     .central-hero,
     .central-status-board,
