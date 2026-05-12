@@ -67,6 +67,38 @@
         });
     });
 
+    qsa('.interaction-filter-grid').forEach((form) => {
+        const scope = qs('[data-interaction-scope]', form);
+        const user = qs('[data-interaction-user]', form);
+        const role = qs('[data-interaction-role]', form);
+        if (!scope) return;
+
+        if (user) {
+            user.addEventListener('change', () => {
+                if (user.value && user.value !== '0') {
+                    scope.value = 'user';
+                    if (role) role.value = '';
+                }
+            });
+        }
+
+        if (role) {
+            role.addEventListener('change', () => {
+                if (role.value) {
+                    scope.value = 'role';
+                    if (user) user.value = '0';
+                }
+            });
+        }
+
+        scope.addEventListener('change', () => {
+            if (scope.value === 'all' || scope.value === 'mine') {
+                if (user) user.value = '0';
+                if (role) role.value = '';
+            }
+        });
+    });
+
     qsa('[data-opportunity-kanban]').forEach((board) => {
         const updateUrl = board.dataset.updateUrl || '';
         const csrfToken = board.dataset.csrfToken || '';
